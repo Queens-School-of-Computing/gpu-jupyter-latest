@@ -7,21 +7,24 @@ RUN apt-get update \
  && apt-get -y install --no-install-recommends htop apt-utils iputils-ping graphviz libgraphviz-dev openssh-client \
  && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+ #pytest==8.1.1 \
 USER $NB_UID
 RUN set -ex \
  && buildDeps=' \
     graphviz==0.20.3 \
-    pytest==8.1.1 \
+    pytest==8.3.3 \
  ' \
  && pip install --no-cache-dir $buildDeps \
  && fix-permissions "${CONDA_DIR}" \
  && fix-permissions "/home/${NB_USER}"
 
 # upgrade jupyter-server for compatibility
+# distributed==2024.4.1 \
+# jupyter-server==2.13 \
 RUN set -ex \
  && buildDeps=' \
-    distributed==2024.4.1 \
-    jupyter-server==2.13 \
+    distributed==2024.9.0 \
+    jupyter-server==2.14.2 \
  ' \
  && pip install --no-cache-dir $buildDeps \
  && fix-permissions "${CONDA_DIR}" \

@@ -7,7 +7,8 @@
 
 # Use NVIDIA CUDA as base image and run the same installation as in the other packages.
 # The version of cuda must match those of the packages installed in src/Dockerfile.gpulibs
-FROM nvidia/cuda:12.2.2-cudnn8-runtime-ubuntu22.04
+FROM nvidia/cuda:12.6.1-cudnn-runtime-ubuntu22.04
+#FROM nvidia/cuda:12.6.1-cudnn-runtime-ubuntu24.04
 LABEL authors="Christoph Schranz <christoph.schranz@salzburgresearch.at>, Mathematical Michael <consistentbayes@gmail.com>"
 # This is a concatenated Dockerfile, the maintainers of subsequent sections may vary.
 RUN chmod 1777 /tmp && chmod 1777 /var/tmp
@@ -26,6 +27,7 @@ RUN apt-get update && \
 # Ubuntu 22.04 (jammy)
 # https://hub.docker.com/_/ubuntu/tags?page=1&name=jammy
 ARG ROOT_CONTAINER=ubuntu:22.04
+#ARG ROOT_CONTAINER=ubuntu:24.04
 
 
 LABEL maintainer="Jupyter Project <jupyter@googlegroups.com>"
@@ -46,6 +48,9 @@ RUN apt-get update --yes && \
     # - `apt-get upgrade` is run to patch known vulnerabilities in system packages
     #   as the Ubuntu base image is rebuilt too seldom sometimes (less than once a month)
     apt-get upgrade --yes && \
+    apt-get install --yes --no-install-recommends \
+        # https://superuser.com/questions/1308926/error-ca-certificates-is-broken-or-not-fully-installed
+        debconf  && \
     apt-get install --yes --no-install-recommends \
     # - bzip2 is necessary to extract the micromamba executable.
     bzip2 \
@@ -140,7 +145,8 @@ RUN set -x && \
     rm -rf /tmp/bin/ && \
     # Pin major.minor version of python
     # https://conda.io/projects/conda/en/latest/user-guide/tasks/manage-pkgs.html#preventing-packages-from-updating-pinning
-    mamba list --full-name 'python' | tail -1 | tr -s ' ' | cut -d ' ' -f 1,2 | sed 's/\.[^.]*$/.*/' >> "${CONDA_DIR}/conda-meta/pinned" && \
+    #mamba list --full-name 'python' | tail -1 | tr -s ' ' | cut -d ' ' -f 1,2 | sed 's/\.[^.]*$/.*/' >> "${CONDA_DIR}/conda-meta/pinned" && \
+    mamba list 'python' | tail -1 | tr -s ' ' | cut -d ' ' -f 1,2 | sed 's/\.[^.]*$/.*/' >> "${CONDA_DIR}/conda-meta/pinned" && \
     mamba clean --all -f -y && \
     fix-permissions "${CONDA_DIR}" && \
     fix-permissions "/home/${NB_USER}"
@@ -379,6 +385,122 @@ USER ${NB_UID}
 
 WORKDIR "${HOME}"
 
+  ############################################################################
+  ################ Dependency: jupyter/datascience-notebook ##################
+  ############################################################################
+  
+# Copyright (c) Jupyter Development Team.
+# Distributed under the terms of the Modified BSD License.
+ARG OWNER=jupyter
+
+LABEL maintainer="Jupyter Project <jupyter@googlegroups.com>"
+
+# Fix: https://github.com/hadolint/hadolint/wiki/DL4006
+# Fix: https://github.com/koalaman/shellcheck/wiki/SC3014
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+USER root
+
+# Julia installation
+# Default values can be overridden at build time
+# (ARGS are in lower case to distinguish them from ENV)
+# Check https://julialang.org/downloads/
+ARG julia_version="1.10.5"
+
+# R pre-requisites
+RUN apt-get update --yes && \
+    apt-get install --yes --no-install-recommends \
+    fonts-dejavu \
+    gfortran \
+    gcc && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Julia dependencies
+# install Julia packages in /opt/julia instead of ${HOME}
+ENV JULIA_DEPOT_PATH=/opt/julia \
+    JULIA_PKGDIR=/opt/julia \
+    JULIA_VERSION="${julia_version}"
+
+WORKDIR /tmp
+
+# hadolint ignore=SC2046
+RUN set -x && \
+    julia_arch=$(uname -m) && \
+    julia_short_arch="${julia_arch}" && \
+    if [ "${julia_short_arch}" == "x86_64" ]; then \
+      julia_short_arch="x64"; \
+    fi; \
+    julia_installer="julia-${JULIA_VERSION}-linux-${julia_arch}.tar.gz" && \
+    julia_major_minor=$(echo "${JULIA_VERSION}" | cut -d. -f 1,2) && \
+    mkdir "/opt/julia-${JULIA_VERSION}" && \
+    wget -q "https://julialang-s3.julialang.org/bin/linux/${julia_short_arch}/${julia_major_minor}/${julia_installer}" && \
+    tar xzf "${julia_installer}" -C "/opt/julia-${JULIA_VERSION}" --strip-components=1 && \
+    rm "${julia_installer}" && \
+    ln -fs /opt/julia-*/bin/julia /usr/local/bin/julia
+
+# Show Julia where conda libraries are \
+RUN mkdir /etc/julia && \
+    echo "push!(Libdl.DL_LOAD_PATH, \"${CONDA_DIR}/lib\")" >> /etc/julia/juliarc.jl && \
+    # Create JULIA_PKGDIR \
+    mkdir "${JULIA_PKGDIR}" && \
+    chown "${NB_USER}" "${JULIA_PKGDIR}" && \
+    fix-permissions "${JULIA_PKGDIR}"
+
+USER ${NB_UID}
+
+# R packages including IRKernel which gets installed globally.
+# r-e1071: dependency of the caret R package
+RUN mamba install --quiet --yes \
+    'r-base' \
+    'r-caret' \
+    'r-crayon' \
+    'r-devtools' \
+    'r-e1071' \
+    'r-forecast' \
+    'r-hexbin' \
+    'r-htmltools' \
+    'r-htmlwidgets' \
+    'r-irkernel' \
+    'r-nycflights13' \
+    'r-randomforest' \
+    'r-rcurl' \
+    'r-rmarkdown' \
+    'r-rodbc' \
+    'r-rsqlite' \
+    'r-shiny' \
+    'r-tidyverse' \
+    'unixodbc' && \
+    mamba clean --all -f -y && \
+    fix-permissions "${CONDA_DIR}" && \
+    fix-permissions "/home/${NB_USER}"
+
+# `rpy2` and `r-tidymodels` are not easy to install under aarch64
+RUN set -x && \
+    arch=$(uname -m) && \
+    if [ "${arch}" == "x86_64" ]; then \
+        mamba install --quiet --yes \
+            'rpy2' \
+            'r-tidymodels' && \
+            mamba clean --all -f -y && \
+            fix-permissions "${CONDA_DIR}" && \
+            fix-permissions "/home/${NB_USER}"; \
+    fi;
+
+# Add Julia packages.
+# Install IJulia as jovyan and then move the kernelspec out
+# to the system share location. Avoids problems with runtime UID change not
+# taking effect properly on the .local folder in the jovyan home dir.
+RUN julia -e 'import Pkg; Pkg.update()' && \
+    julia -e 'import Pkg; Pkg.add("HDF5")' && \
+    julia -e 'using Pkg; pkg"add IJulia"; pkg"precompile"' && \
+    # move kernelspec out of home \
+    mv "${HOME}/.local/share/jupyter/kernels/julia"* "${CONDA_DIR}/share/jupyter/kernels/" && \
+    chmod -R go+rx "${CONDA_DIR}/share/jupyter" && \
+    rm -rf "${HOME}/.local" && \
+    fix-permissions "${JULIA_PKGDIR}" "${CONDA_DIR}/share/jupyter"
+
+WORKDIR "${HOME}"
+
 ############################################################################
 ########################## Dependency: gpulibs #############################
 ############################################################################
@@ -414,7 +536,8 @@ RUN set -ex \
     torchvision==0.17.2 \
     torchaudio==2.2.2 \
 ' \
- && pip install --no-cache-dir $buildDeps  --extra-index-url https://download.pytorch.org/whl/cu121 \
+ #&& pip install --no-cache-dir $buildDeps  --extra-index-url https://download.pytorch.org/whl/cu121 \
+ && pip install $buildDeps  --extra-index-url https://download.pytorch.org/whl/cu121 \
  && fix-permissions "${CONDA_DIR}" \
  && fix-permissions "/home/${NB_USER}"
 
@@ -472,8 +595,8 @@ RUN set -ex \
 # upgrade jupyter-server for compatibility
 RUN set -ex \
  && buildDeps=' \
-    distributed==2024.4.1 \
-    jupyter-server==2.13 \
+    distributed==2024.9.0 \
+    jupyter-server==2.14.2 \
  ' \
  && pip install --no-cache-dir $buildDeps \
  && fix-permissions "${CONDA_DIR}" \
@@ -501,6 +624,195 @@ RUN set -ex \
 
 # Switch back to jovyan to avoid accidental container runs as root
 USER $NB_UID
+
+
+############################################################################
+############################ QSC packages ###############################
+############################################################################
+
+LABEL authors="Aaron Visser"
+
+USER root
+
+# ad-hoc fix for compatibility to the cluster
+#RUN pip install jupyterhub==1.3.0 jupyterlab==2.2.9 jupyter-server==1.13.5 
+USER $NB_UID
+RUN pip install --root-user-action ignore --no-cache-dir jupyter-server-proxy==4.4.0 \
+ && fix-permissions "${CONDA_DIR}" \
+ && fix-permissions "/home/${NB_USER}"
+
+RUN jupyter server extension enable --sys-prefix jupyter_server_proxy
+RUN jupyter server extension enable --py jupyter_server_proxy
+
+#ENV NODE_OPTIONS=--openssl-legacy-provider
+#RUN jupyter labextension install --log-level=0 @jupyterlab/server-proxy@4.4.0
+RUN pip install --root-user-action ignore  jupyter-vscode-proxy lief \
+ && fix-permissions "${CONDA_DIR}" \
+ && fix-permissions "/home/${NB_USER}"
+
+USER root
+RUN curl -fsSL https://code-server.dev/install.sh | sh
+
+
+# RUN jupyter labextension install  @lckr/jupyterlab_variableinspector
+# RUN jupyter labextension install @jupyterlab/shortcutui
+
+USER root
+
+# ssh ando thers
+RUN apt-get update
+RUN apt-get install -y openssh-client vim tmux upx-ucl file libmagic-dev tree p7zip-full
+# RUN apt-get install -y libtool autoconf automake=1.16.3 ppa libpython3.9-dev gcc=9.4.0
+
+USER $NB_UID
+#USER root
+#RUN jupyter labextension install @shahinrostami/theme-purple-please
+#RUN jupyter labextension install jupyterlab-theme-solarized-dark
+
+
+## not running for some reason
+RUN mamba install --quiet --yes \
+  nb_conda_kernels
+
+
+# # ida:
+# RUN dpkg --add-architecture i386 && apt-get -y update
+# RUN apt-get -y install python3-pip
+
+# RUN mkdir /ida 
+# RUN mkdir /ida_install
+# COPY ida.run /ida_install
+# RUN chmod +x /ida_install/ida.run
+# ARG IDA_PASSWORD
+# RUN printf "\n\n\n\n\n\ny\n\ny\ny\n" | /ida_install/ida.run --installpassword $IDA_PASSWORD --prefix /ida
+# USER $NB_UID
+# ENV PATH "$PATH:/ida"
+# RUN mkdir ~/.idapro
+# RUN touch ~/.idapro/ida.reg
+# RUN /usr/bin/python3 -m pip install --upgrade pip
+# RUN /usr/bin/pip3 install git+https://github.com/L1NNA/JARV1S-Ghidra@master autopep8 pylint
+
+USER root
+
+
+# Chrome-driver
+RUN curl -LO https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+RUN apt-get install -y ./google-chrome-stable_current_amd64.deb
+RUN rm google-chrome-stable_current_amd64.deb 
+
+
+RUN pip install --root-user-action ignore PyVirtualDisplay selenium \
+ && fix-permissions "${CONDA_DIR}" \
+ && fix-permissions "/home/${NB_USER}"
+
+RUN mkdir /chromedriver 
+RUN wget https://chromedriver.storage.googleapis.com/100.0.4896.20/chromedriver_linux64.zip && unzip chromedriver_linux64.zip && cp chromedriver /chromedriver/
+RUN rm chromedriver_linux64.zip chromedriver
+ENV PATH "$PATH:/chromedriver"
+
+# install jvd package:
+# RUN /usr/bin/python3 -m pip install git+https://github.com/L1NNA/JARV1S-Ghidra@master
+# RUN python -m pip install git+https://github.com/L1NNA/JARV1S-Ghidra@master autopep8 pylint
+
+# RDT:
+USER root
+
+# AV - added power-manager to be able to remove the screensaver (set presentation-mode)
+RUN apt-get -y update \
+  && apt-get install -y dbus-x11 \
+  xfce4 \
+  xfce4-panel \
+  xfce4-session \
+  xfce4-settings \
+ # xfce4-power-manager \
+ # xfce4-screensaver \
+  xorg 
+
+# AV - specifically remove and purge xfce4-screensaver to prevent screen locking.
+RUN apt-get remove -y -q --purge xfce4-screensaver
+
+# Remove light-locker to prevent screen lock
+RUN wget 'https://sourceforge.net/projects/turbovnc/files/3.1/turbovnc_3.1_amd64.deb/download' -O turbovnc_3.1_amd64.deb && \
+  apt-get install -y -q ./turbovnc_3.1_amd64.deb && \
+  apt-get remove -y -q --purge light-locker && \
+  rm ./turbovnc_3.1_amd64.deb && \
+  ln -s /opt/TurboVNC/bin/* /usr/local/bin/
+
+
+# AV Sept 26 2024 - install full vscode
+USER root
+
+#https://update.code.visualstudio.com/1.93.1/linux-deb-arm64/stable
+
+RUN wget 'https://update.code.visualstudio.com/1.93.1/linux-deb-x64/stable' -O code.deb && \
+    dpkg -i code.deb && \
+    rm code.deb
+
+# create symlink for conda to mamba
+# seems to cause the image to fail to load.
+#RUN ln -s /opt/conda/bin/mamba /opt/conda/bin/conda
+
+# apt-get may result in root-owned directories/files under $HOME
+RUN chown -R $NB_UID:$NB_GID $HOME
+
+#USER root
+USER $NB_UID
+# conda not working?
+RUN mamba install -y -c conda-forge websockify
+RUN pip install --root-user-action ignore  git+https://github.com/L1NNA/jupyter-remote-desktop-proxy@main \
+ && fix-permissions "${CONDA_DIR}" \
+ && fix-permissions "/home/${NB_USER}"
+
+USER root
+
+RUN apt-get -y install gtk2-engines-murrine gtk2-engines-pixbuf sassc optipng inkscape ibglib2.0-dev-bin libglib2.0-dev libxml2-utils
+
+USER $NB_UID
+RUN git clone https://github.com/vinceliuice/WhiteSur-gtk-theme && cd WhiteSur-gtk-theme && git checkout 422060b7db13fc3143146f62abb2c102039f06c3 && cd .. && \
+  git clone https://github.com/vinceliuice/WhiteSur-icon-theme && \
+  ./WhiteSur-gtk-theme/install.sh --nautilus-use-colors && \
+  ./WhiteSur-icon-theme/install.sh   
+
+#USER root
+USER $NB_UID
+# torch:
+RUN pip install --root-user-action ignore  torch_geometric \
+ && fix-permissions "${CONDA_DIR}" \
+ && fix-permissions "/home/${NB_USER}"
+RUN pip install --root-user-action ignore  pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.2.2+cu121.html \
+ && fix-permissions "${CONDA_DIR}" \
+ && fix-permissions "/home/${NB_USER}"
+
+USER root
+# other dev tools
+RUN apt-get install -y nvtop
+RUN apt-get install  -y -q  libtool autoconf automake
+RUN apt-get install  -y -q  software-properties-common
+RUN add-apt-repository ppa:deadsnakes/ppa
+RUN add-apt-repository ppa:deadsnakes/ppa
+RUN apt-get install -y -q libpython3.11-dev
+RUN add-apt-repository ppa:ubuntu-toolchain-r/test
+RUN apt-get update
+RUN apt-get -y -q install gcc-9
+RUN apt autoremove -y
+
+
+# Clean installation
+ENV NODE_OPTIONS=
+RUN update-alternatives --install /usr/bin/x-www-browser x-www-browser /usr/bin/google-chrome 500
+RUN update-alternatives --set x-www-browser /usr/bin/google-chrome
+RUN mamba clean --all -f -y && \
+  fix-permissions $CONDA_DIR && \
+  fix-permissions /home/$NB_USER
+
+RUN fix-permissions /home/$NB_USER
+
+# Switch back to jovyan to avoid accidental container runs as root
+USER $NB_UID
+
+
+
+
 
 # Set env-var JUPYTER_TOKEN as static token
 ARG JUPYTER_TOKEN
