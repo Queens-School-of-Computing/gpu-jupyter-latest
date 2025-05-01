@@ -64,7 +64,7 @@ if [ "$(id -u)" == 0 ]; then
     # - CHOWN_HOME: a boolean ("1" or "yes") to chown the user's home folder
     # - CHOWN_EXTRA: a comma-separated list of paths to chown
     # - CHOWN_HOME_OPTS / CHOWN_EXTRA_OPTS: arguments to the chown commands
-
+    _log "*** Aaron  *** Started container as id 0"
     # Refit the jovyan user to the desired user (NB_USER)
     if id jovyan &> /dev/null; then
         if ! usermod --home "/home/${NB_USER}" --login "${NB_USER}" jovyan 2>&1 | grep "no changes" > /dev/null; then
@@ -143,11 +143,13 @@ if [ "$(id -u)" == 0 ]; then
     # Prepend ${CONDA_DIR}/bin to sudo secure_path
     sed -r "s#Defaults\s+secure_path\s*=\s*\"?([^\"]+)\"?#Defaults secure_path=\"${CONDA_DIR}/bin:\1\"#" /etc/sudoers | grep secure_path > /etc/sudoers.d/path
 
+_log "*** Aaron *** This is where the password sudo happens"
+_log "*** Aaron *** value of GRANT_SUDO==${GRANT_SUDO}"
     # Optionally grant passwordless sudo rights for the desired user
-    if [[ "${GRANT_SUDO}" == "1" || "${GRANT_SUDO}" == "yes" ]]; then
-        _log "Granting ${NB_USER} passwordless sudo rights!"
-        echo "${NB_USER} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/added-by-start-script
-    fi
+    #if [[ "${GRANT_SUDO}" == "1" || "${GRANT_SUDO}" == "yes" ]]; then
+    _log "Granting ${NB_USER} passwordless sudo rights!"
+    echo "${NB_USER} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/added-by-start-script
+    #fi
 
     # NOTE: This hook is run as the root user!
     # shellcheck disable=SC1091
@@ -191,6 +193,8 @@ if [ "$(id -u)" == 0 ]; then
 # The container didn't start as the root user, so we will have to act as the
 # user we started as.
 else
+    _log "*** Aaron *** Didn't start as root user"
+
     # Warn about misconfiguration of: granting sudo rights
     if [[ "${GRANT_SUDO}" == "1" || "${GRANT_SUDO}" == "yes" ]]; then
         _log "WARNING: container must be started as root to grant sudo permissions!"
