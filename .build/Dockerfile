@@ -7,9 +7,10 @@
 
 # Use NVIDIA CUDA as base image and run the same installation as in the other packages.
 # The version of cuda must match those of the packages installed in src/Dockerfile.gpulibs
-FROM nvidia/cuda:12.6.1-cudnn-runtime-ubuntu22.04
+FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04
+#FROM nvidia/cuda:12.6.1-cudnn-runtime-ubuntu22.04
 #FROM nvidia/cuda:12.6.1-cudnn-runtime-ubuntu24.04
-LABEL authors="Christoph Schranz <christoph.schranz@salzburgresearch.at>, Mathematical Michael <consistentbayes@gmail.com>"
+LABEL authors="Christoph Schranz <christoph.schranz@salzburgresearch.at>, Aaron Visser <aaron.visser@queensu.ca>"
 # This is a concatenated Dockerfile, the maintainers of subsequent sections may vary.
 RUN chmod 1777 /tmp && chmod 1777 /var/tmp
 
@@ -24,10 +25,10 @@ RUN apt-get update && \
 # Copyright (c) Jupyter Development Team.
 # Distributed under the terms of the Modified BSD License.
 
-# Ubuntu 22.04 (jammy)
-# https://hub.docker.com/_/ubuntu/tags?page=1&name=jammy
-ARG ROOT_CONTAINER=ubuntu:22.04
-#ARG ROOT_CONTAINER=ubuntu:24.04
+# Ubuntu 24.04 (noble)
+# https://hub.docker.com/_/ubuntu/tags?page=1&name=noble
+#ARG ROOT_CONTAINER=ubuntu:22.04
+ARG ROOT_CONTAINER=ubuntu:24.04
 
 
 LABEL maintainer="Jupyter Project <jupyter@googlegroups.com>"
@@ -43,7 +44,8 @@ USER root
 
 # Install all OS dependencies for the Server that starts
 # but lacks all features (e.g., download as all possible file formats)
-ENV DEBIAN_FRONTEND noninteractive
+#ENV DEBIAN_FRONTEND noninteractive
+ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update --yes && \
     # - `apt-get upgrade` is run to patch known vulnerabilities in system packages
     #   as the Ubuntu base image is rebuilt too seldom sometimes (less than once a month)
@@ -56,6 +58,10 @@ RUN apt-get update --yes && \
     bzip2 \
     ca-certificates \
     locales \
+    # - `netbase` provides /etc/{protocols,rpc,services}, part of POSIX
+    #   and required by various C functions like getservbyname and getprotobyname
+    #   https://github.com/jupyter/docker-stacks/pull/2129
+    netbase \
     sudo \
     # - `tini` is installed as a helpful container entrypoint,
     #   that reaps zombie processes and such of the actual executable we want to start
@@ -91,7 +97,14 @@ RUN sed -i 's/^#force_color_prompt=yes/force_color_prompt=yes/' /etc/skel/.bashr
     #echo 'eval "$(conda shell.bash hook)"' >> /etc/skel/.bashrc
     echo 'eval "$(mamba shell.bash hook)"' >> /etc/skel/.bashrc
 
-# Create NB_USER with name jovyan user with UID=1000 and in the 'users' group
+# Delete existing user with UID="${NB_UID}" if it exists
+# hadolint ignore=SC2046
+RUN if grep -q "${NB_UID}" /etc/passwd; then \
+        userdel --remove $(id -un "${NB_UID}"); \
+    fi
+
+
+# Create "${NB_USER}" user (`jovyan` by default) with UID="${NB_UID}" (`1000` by default) and in the 'users' group
 # and make sure these dirs are writable by the `users` group.
 RUN echo "auth requisite pam_deny.so" >> /etc/pam.d/su && \
     sed -i.bak -e 's/^%admin/#%admin/' /etc/sudoers && \
@@ -106,7 +119,7 @@ RUN echo "auth requisite pam_deny.so" >> /etc/pam.d/su && \
 USER ${NB_UID}
 
 # Pin the Python version here, or set it to "default"
-ARG PYTHON_VERSION=3.11
+ARG PYTHON_VERSION=3.12
 
 # Setup work directory for backward-compatibility
 RUN mkdir "/home/${NB_USER}/work" && \
@@ -140,14 +153,16 @@ RUN set -x && \
         --root-prefix="${CONDA_DIR}" \
         --prefix="${CONDA_DIR}" \
         --yes \
-        "${PYTHON_SPECIFIER}" \
+        'jupyter_core' \
+        'conda' \
         'mamba' \
-        'jupyter_core' && \
+        "${PYTHON_SPECIFIER}" && \
     rm -rf /tmp/bin/ && \
     # Pin major.minor version of python
     # https://conda.io/projects/conda/en/latest/user-guide/tasks/manage-pkgs.html#preventing-packages-from-updating-pinning
     #mamba list --full-name 'python' | tail -1 | tr -s ' ' | cut -d ' ' -f 1,2 | sed 's/\.[^.]*$/.*/' >> "${CONDA_DIR}/conda-meta/pinned" && \
-    mamba list 'python' | tail -1 | tr -s ' ' | cut -d ' ' -f 1,2 | sed 's/\.[^.]*$/.*/' >> "${CONDA_DIR}/conda-meta/pinned" && \
+    #mamba list 'python' | tail -1 | tr -s ' ' | cut -d ' ' -f 1,2 | sed 's/\.[^.]*$/.*/' >> "${CONDA_DIR}/conda-meta/pinned" && \
+    mamba list --full-name 'python' | awk 'END{sub("[^.]*$", "*", $2); print $1 " " $2}' >> "${CONDA_DIR}/conda-meta/pinned" && \
     mamba clean --all -f -y && \
     fix-permissions "${CONDA_DIR}" && \
     fix-permissions "/home/${NB_USER}"
@@ -214,14 +229,17 @@ USER ${NB_UID}
 # files across image layers when the permissions change
 WORKDIR /tmp
 RUN mamba install --yes \
+    'jupyterhub-singleuser' \
     #'jupyterlab==4.2.4' \
     'jupyterlab' \
-    'notebook' \
-    'jupyterhub==5.2.0' \
-    'nbclassic' && \
+    'nbclassic' \
+    'notebook>=7.2.2' && \
+    #'notebook' \
+    #'jupyterhub==5.2.0' \
+    #'nbclassic' && \
     jupyter server --generate-config && \
     mamba clean --all -f -y && \
-    npm cache clean --force && \
+    #npm cache clean --force && \
     jupyter lab clean && \
     rm -rf "/home/${NB_USER}/.cache/yarn" && \
     fix-permissions "${CONDA_DIR}" && \
@@ -347,7 +365,7 @@ RUN mamba install --yes \
     'dask' \
     'dill' \
     'h5py' \
-    'ipympl'\
+    'ipympl' \
     'ipywidgets' \
     'jupyterlab-git' \
     'matplotlib-base' \
@@ -365,7 +383,7 @@ RUN mamba install --yes \
     'sqlalchemy' \
     'statsmodels' \
     'sympy' \
-    'widgetsnbextension'\
+    'widgetsnbextension' \
     'xlrd' && \
     mamba clean --all -f -y && \
     fix-permissions "${CONDA_DIR}" && \
@@ -507,7 +525,7 @@ WORKDIR "${HOME}"
 ########################## Dependency: gpulibs #############################
 ############################################################################
 
-LABEL maintainer="Christoph Schranz <christoph.schranz@salzburgresearch.at>, Mathematical Michael <consistentbayes@gmail.com>"
+LABEL maintainer="Christoph Schranz <christoph.schranz@salzburgresearch.at>"
 
 # Install dependencies for e.g. PyTorch
 RUN mamba install --quiet --yes \
@@ -523,7 +541,8 @@ RUN mamba install --quiet --yes \
 # using device_lib.list_local_devices() the cudNN version is shown, adapt version to tested compat
 USER ${NB_UID}
 RUN pip install --upgrade pip && \
-    pip install --no-cache-dir tensorflow==2.15.1 keras==2.15.0 && \
+    pip install --no-cache-dir tensorflow==2.18.0 keras==3.8.0 && \
+#    pip install --no-cache-dir tensorflow==2.15.1 keras==2.15.0 && \
     fix-permissions "${CONDA_DIR}" && \
     fix-permissions "/home/${NB_USER}"
 
@@ -534,12 +553,16 @@ RUN pip install --upgrade pip && \
 #  && torchviz==0.0.2 --extra-index-url https://download.pytorch.org/whl/cu121
 RUN set -ex \
  && buildDeps=' \
-    torch==2.2.2 \
-    torchvision==0.17.2 \
-    torchaudio==2.2.2 \
+    #torch==2.2.2 \
+    #torchvision==0.17.2 \
+    #torchaudio==2.2.2 \
+    torch==2.6.0 \
+    torchvision==0.21.0 \
+    torchaudio==2.6.0 \
 ' \
  #&& pip install --no-cache-dir $buildDeps  --extra-index-url https://download.pytorch.org/whl/cu121 \
- && pip install $buildDeps  --extra-index-url https://download.pytorch.org/whl/cu121 \
+ #&& pip install $buildDeps  --extra-index-url https://download.pytorch.org/whl/cu121 \
+ && pip install --no-cache-dir $buildDeps  --index-url https://download.pytorch.org/whl/cu126\
  && fix-permissions "${CONDA_DIR}" \
  && fix-permissions "/home/${NB_USER}"
 
@@ -562,7 +585,8 @@ RUN pip install --no-cache-dir nvidia-pyindex && \
 
 # Install cuda-nvcc with sepecific version, see here: https://anaconda.org/nvidia/cuda-nvcc/labels
 #RUN mamba install -c nvidia cuda-nvcc=12.2.140 -y && \
-RUN mamba install -c nvidia cuda-nvcc=12.6.68 -y && \
+#RUN mamba install -c nvidia cuda-nvcc=12.6.68 -y && \
+RUN mamba install -c nvidia cuda-nvcc=12.6.85 -y && \
     mamba clean --all -f -y && \
     fix-permissions $CONDA_DIR && \
     fix-permissions /home/$NB_USER
@@ -576,7 +600,7 @@ USER $NB_UID
   ############################ Useful packages ###############################
   ############################################################################
   
-LABEL authors="Christoph Schranz <christoph.schranz@salzburgresearch.at>, Mathematical Michael <consistentbayes@gmail.com>"
+LABEL authors="Christoph Schranz <christoph.schranz@salzburgresearch.at>"
 
 USER root
 
@@ -589,7 +613,8 @@ USER $NB_UID
 RUN set -ex \
  && buildDeps=' \
     graphviz==0.20.3 \
-    pytest==8.1.1 \
+    #pytest==8.1.1 \
+    pytest==8.3.4 \
  ' \
  && pip install --no-cache-dir $buildDeps \
  && fix-permissions "${CONDA_DIR}" \
@@ -598,8 +623,10 @@ RUN set -ex \
 # upgrade jupyter-server for compatibility
 RUN set -ex \
  && buildDeps=' \
-    distributed==2024.9.0 \
-    jupyter-server==2.14.2 \
+    distributed==2025.2.0 \
+    jupyter-server==2.15.0 \
+    #distributed==2024.9.0 \
+    #jupyter-server==2.14.2 \
  ' \
  && pip install --no-cache-dir $buildDeps \
  && fix-permissions "${CONDA_DIR}" \
@@ -611,7 +638,8 @@ RUN set -ex \
     jupyter_contrib_nbextensions==0.7.0 \
     jupyter_nbextensions_configurator==0.6.4 \
     # install git extension
-    jupyterlab-git==0.50.1 \
+    #jupyterlab-git==0.50.1 \
+    jupyterlab-git==0.51.0 \
     # install plotly extension
     plotly==5.24.1 \
     # install drawio and graphical extensions, not compatible with Jupyterlab 4.X yet
@@ -760,7 +788,8 @@ USER root
 USER $NB_UID
 #RUN pip install --root-user-action ignore --no-cache-dir jupyter-server-proxy==4.4.0 \
 #RUN pip install --root-user-action ignore --no-cache-dir jupyter-server-proxy jupyter-vscode-proxy lief code-server \
-RUN pip install --root-user-action ignore --no-cache-dir jupyterhub==5.2.0 jupyterlab==4.2.5 jupyter-server==2.14.2
+#RUN pip install --root-user-action ignore --no-cache-dir jupyterhub==5.2.0 jupyterlab==4.2.5 jupyter-server==2.14.2
+RUN pip install --root-user-action ignore --no-cache-dir jupyterhub jupyterlab jupyter-server
 RUN pip install --root-user-action ignore --no-cache-dir jupyter-server-proxy jupyter-vscode-proxy lief lckr_jupyterlab_variableinspector \
  && fix-permissions "${CONDA_DIR}" \
  && fix-permissions "/home/${NB_USER}"
@@ -831,7 +860,8 @@ RUN pip install --root-user-action ignore PyVirtualDisplay selenium \
  && fix-permissions "/home/${NB_USER}"
 
 RUN mkdir /chromedriver 
-RUN wget https://chromedriver.storage.googleapis.com/100.0.4896.20/chromedriver_linux64.zip && unzip chromedriver_linux64.zip && cp chromedriver /chromedriver/
+#RUN wget https://chromedriver.storage.googleapis.com/100.0.4896.20/chromedriver_linux64.zip && unzip chromedriver_linux64.zip && cp chromedriver /chromedriver/
+RUN wget https://storage.googleapis.com/chrome-for-testing-public/136.0.7103.49/linux64/chromedriver-linux64.zip && unzip chromedriver_linux64.zip && cp chromedriver /chromedriver/
 RUN rm chromedriver_linux64.zip chromedriver
 ENV PATH "$PATH:/chromedriver"
 
@@ -869,7 +899,7 @@ USER root
 
 #https://update.code.visualstudio.com/1.93.1/linux-deb-arm64/stable
 
-RUN wget 'https://update.code.visualstudio.com/1.93.1/linux-deb-x64/stable' -O code.deb && \
+RUN wget 'https://update.code.visualstudio.com/1.99.3/linux-deb-x64/stable' -O code.deb && \
     dpkg -i code.deb && \
     rm code.deb
 

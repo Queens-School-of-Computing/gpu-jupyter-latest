@@ -157,11 +157,19 @@ _log "*** Aaron *** value of GRANT_SUDO==${GRANT_SUDO}"
     unset_explicit_env_vars
 
     _log "Running as ${NB_USER}:" "${cmd[@]}"
-    exec sudo --preserve-env --set-home --user "${NB_USER}" \
-        LD_LIBRARY_PATH="${LD_LIBRARY_PATH}" \
-        PATH="${PATH}" \
-        PYTHONPATH="${PYTHONPATH:-}" \
-        "${cmd[@]}"
+    #exec sudo --preserve-env --set-home --user "${NB_USER}" \
+    #    LD_LIBRARY_PATH="${LD_LIBRARY_PATH}" \
+    #    PATH="${PATH}" \
+    #    PYTHONPATH="${PYTHONPATH:-}" \
+    #    "${cmd[@]}"
+    if [ "${NB_USER}" = "root" ] && [ "${NB_UID}" = "$(id -u "${NB_USER}")" ] && [ "${NB_GID}" = "$(id -g "${NB_USER}")" ]; then
+        HOME="/home/root" exec "${cmd[@]}"
+    else
+        exec sudo --preserve-env --set-home --user "${NB_USER}" \
+            LD_LIBRARY_PATH="${LD_LIBRARY_PATH}" \
+            PATH="${PATH}" \
+            PYTHONPATH="${PYTHONPATH:-}" \
+            "${cmd[@]}"
         # Notes on how we ensure that the environment that this container is started
         # with is preserved (except vars listed in JUPYTER_ENV_VARS_TO_UNSET) when
         # we transition from running as root to running as NB_USER.
@@ -189,7 +197,7 @@ _log "*** Aaron *** value of GRANT_SUDO==${GRANT_SUDO}"
         #   above in /etc/sudoers.d/path. Thus PATH is irrelevant to how the above
         #   sudo command resolves the path of `${cmd[@]}`. The PATH will be relevant
         #   for resolving paths of any subprocesses spawned by `${cmd[@]}`.
-
+    fi
 # The container didn't start as the root user, so we will have to act as the
 # user we started as.
 else
