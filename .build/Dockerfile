@@ -8,8 +8,6 @@
 # Use NVIDIA CUDA as base image and run the same installation as in the other packages.
 # The version of cuda must match those of the packages installed in src/Dockerfile.gpulibs
 FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04
-#FROM nvidia/cuda:12.6.1-cudnn-runtime-ubuntu22.04
-#FROM nvidia/cuda:12.6.1-cudnn-runtime-ubuntu24.04
 LABEL authors="Christoph Schranz <christoph.schranz@salzburgresearch.at>, Aaron Visser <aaron.visser@queensu.ca>"
 # This is a concatenated Dockerfile, the maintainers of subsequent sections may vary.
 RUN chmod 1777 /tmp && chmod 1777 /var/tmp
@@ -861,8 +859,9 @@ RUN pip install --root-user-action ignore PyVirtualDisplay selenium \
 
 RUN mkdir /chromedriver 
 #RUN wget https://chromedriver.storage.googleapis.com/100.0.4896.20/chromedriver_linux64.zip && unzip chromedriver_linux64.zip && cp chromedriver /chromedriver/
-RUN wget https://storage.googleapis.com/chrome-for-testing-public/136.0.7103.49/linux64/chromedriver-linux64.zip && unzip chromedriver_linux64.zip && cp chromedriver /chromedriver/
-RUN rm chromedriver_linux64.zip chromedriver
+RUN wget https://storage.googleapis.com/chrome-for-testing-public/136.0.7103.49/linux64/chromedriver-linux64.zip && unzip chromedriver-linux64.zip && cp chromedriver-linux64/chromedriver /chromedriver/
+RUN rm chromedriver_linux64.zip 
+RUN rm -r chromedriver-linux64
 ENV PATH "$PATH:/chromedriver"
 
 # install jvd package:

@@ -1,5 +1,5 @@
 ca-certificates
-libasound2
+libasound2t64
 libatomic1
 libc6
 libcairo-gobject2
