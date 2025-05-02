@@ -25,7 +25,6 @@ RUN apt-get update && \
 
 # Ubuntu 24.04 (noble)
 # https://hub.docker.com/_/ubuntu/tags?page=1&name=noble
-#ARG ROOT_CONTAINER=ubuntu:22.04
 ARG ROOT_CONTAINER=ubuntu:24.04
 
 
@@ -92,7 +91,6 @@ RUN chmod a+rx /usr/local/bin/fix-permissions
 RUN sed -i 's/^#force_color_prompt=yes/force_color_prompt=yes/' /etc/skel/.bashrc && \
     # More information in: https://github.com/jupyter/docker-stacks/pull/2047
     # and docs: https://docs.conda.io/projects/conda/en/latest/dev-guide/deep-dives/activation.html
-    #echo 'eval "$(conda shell.bash hook)"' >> /etc/skel/.bashrc
     echo 'eval "$(mamba shell.bash hook)"' >> /etc/skel/.bashrc
 
 # Delete existing user with UID="${NB_UID}" if it exists
@@ -158,8 +156,6 @@ RUN set -x && \
     rm -rf /tmp/bin/ && \
     # Pin major.minor version of python
     # https://conda.io/projects/conda/en/latest/user-guide/tasks/manage-pkgs.html#preventing-packages-from-updating-pinning
-    #mamba list --full-name 'python' | tail -1 | tr -s ' ' | cut -d ' ' -f 1,2 | sed 's/\.[^.]*$/.*/' >> "${CONDA_DIR}/conda-meta/pinned" && \
-    #mamba list 'python' | tail -1 | tr -s ' ' | cut -d ' ' -f 1,2 | sed 's/\.[^.]*$/.*/' >> "${CONDA_DIR}/conda-meta/pinned" && \
     mamba list --full-name 'python' | awk 'END{sub("[^.]*$", "*", $2); print $1 " " $2}' >> "${CONDA_DIR}/conda-meta/pinned" && \
     mamba clean --all -f -y && \
     fix-permissions "${CONDA_DIR}" && \
@@ -228,16 +224,11 @@ USER ${NB_UID}
 WORKDIR /tmp
 RUN mamba install --yes \
     'jupyterhub-singleuser' \
-    #'jupyterlab==4.2.4' \
     'jupyterlab' \
     'nbclassic' \
     'notebook>=7.2.2' && \
-    #'notebook' \
-    #'jupyterhub==5.2.0' \
-    #'nbclassic' && \
     jupyter server --generate-config && \
     mamba clean --all -f -y && \
-    #npm cache clean --force && \
     jupyter lab clean && \
     rm -rf "/home/${NB_USER}/.cache/yarn" && \
     fix-permissions "${CONDA_DIR}" && \
@@ -540,7 +531,6 @@ RUN mamba install --quiet --yes \
 USER ${NB_UID}
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir tensorflow==2.18.0 keras==3.8.0 && \
-#    pip install --no-cache-dir tensorflow==2.15.1 keras==2.15.0 && \
     fix-permissions "${CONDA_DIR}" && \
     fix-permissions "/home/${NB_USER}"
 
@@ -551,15 +541,10 @@ RUN pip install --upgrade pip && \
 #  && torchviz==0.0.2 --extra-index-url https://download.pytorch.org/whl/cu121
 RUN set -ex \
  && buildDeps=' \
-    #torch==2.2.2 \
-    #torchvision==0.17.2 \
-    #torchaudio==2.2.2 \
     torch==2.6.0 \
     torchvision==0.21.0 \
     torchaudio==2.6.0 \
 ' \
- #&& pip install --no-cache-dir $buildDeps  --extra-index-url https://download.pytorch.org/whl/cu121 \
- #&& pip install $buildDeps  --extra-index-url https://download.pytorch.org/whl/cu121 \
  && pip install --no-cache-dir $buildDeps  --index-url https://download.pytorch.org/whl/cu126\
  && fix-permissions "${CONDA_DIR}" \
  && fix-permissions "/home/${NB_USER}"
@@ -582,8 +567,6 @@ RUN pip install --no-cache-dir nvidia-pyindex && \
     fix-permissions "/home/${NB_USER}"
 
 # Install cuda-nvcc with sepecific version, see here: https://anaconda.org/nvidia/cuda-nvcc/labels
-#RUN mamba install -c nvidia cuda-nvcc=12.2.140 -y && \
-#RUN mamba install -c nvidia cuda-nvcc=12.6.68 -y && \
 RUN mamba install -c nvidia cuda-nvcc=12.6.85 -y && \
     mamba clean --all -f -y && \
     fix-permissions $CONDA_DIR && \
@@ -611,7 +594,6 @@ USER $NB_UID
 RUN set -ex \
  && buildDeps=' \
     graphviz==0.20.3 \
-    #pytest==8.1.1 \
     pytest==8.3.4 \
  ' \
  && pip install --no-cache-dir $buildDeps \
@@ -623,8 +605,6 @@ RUN set -ex \
  && buildDeps=' \
     distributed==2025.2.0 \
     jupyter-server==2.15.0 \
-    #distributed==2024.9.0 \
-    #jupyter-server==2.14.2 \
  ' \
  && pip install --no-cache-dir $buildDeps \
  && fix-permissions "${CONDA_DIR}" \
@@ -636,12 +616,10 @@ RUN set -ex \
     jupyter_contrib_nbextensions==0.7.0 \
     jupyter_nbextensions_configurator==0.6.4 \
     # install git extension
-    #jupyterlab-git==0.50.1 \
     jupyterlab-git==0.51.0 \
     # install plotly extension
     plotly==5.24.1 \
     # install drawio and graphical extensions, not compatible with Jupyterlab 4.X yet
-    # ipydrawio==1.3.0 \
     ipyleaflet==0.19.2 \
     ipywidgets==8.1.5 \
     # install spell checker
@@ -780,32 +758,12 @@ LABEL authors="Aaron Visser"
 
 USER root
 
-# ad-hoc fix for compatibility to the cluster
-#RUN pip install jupyterhub==1.3.0 jupyterlab==2.2.9 jupyter-server==1.13.5 
 
 USER $NB_UID
-#RUN pip install --root-user-action ignore --no-cache-dir jupyter-server-proxy==4.4.0 \
-#RUN pip install --root-user-action ignore --no-cache-dir jupyter-server-proxy jupyter-vscode-proxy lief code-server \
-#RUN pip install --root-user-action ignore --no-cache-dir jupyterhub==5.2.0 jupyterlab==4.2.5 jupyter-server==2.14.2
 RUN pip install --root-user-action ignore --no-cache-dir jupyterhub jupyterlab jupyter-server
 RUN pip install --root-user-action ignore --no-cache-dir jupyter-server-proxy jupyter-vscode-proxy lief lckr_jupyterlab_variableinspector \
  && fix-permissions "${CONDA_DIR}" \
  && fix-permissions "/home/${NB_USER}"
-
-#RUN code-server --install-extension ms-python.python
-
-#RUN jupyter labextension install --log-level=0 @jupyterlab/server-proxy
-#RUN jupyter labextension install --log-level=0 @jupyterlab/server-proxy
-
-#RUN jupyter server extension enable --sys-prefix jupyter_server_proxy
-
-##RUN jupyter server extension enable --py jupyter_server_proxy 1
-
-#ENV NODE_OPTIONS=--openssl-legacy-provider
-#RUN jupyter labextension install --log-level=0 @jupyterlab/server-proxy@4.4.0
-#RUN pip install --root-user-action ignore  jupyter-vscode-proxy lief \
-# && fix-permissions "${CONDA_DIR}" \
-# && fix-permissions "/home/${NB_USER}"
 
 USER root
 RUN curl -fsSL https://code-server.dev/install.sh | sh
@@ -814,12 +772,8 @@ RUN code-server --install-extension ms-python.python
 # ssh ando thers
 RUN apt-get update \
   && apt-get install -y openssh-client vim tmux upx-ucl file libmagic-dev tree p7zip-full
-# RUN apt-get install -y libtool autoconf automake=1.16.3 ppa libpython3.9-dev gcc=9.4.0
 
 USER $NB_UID
-#USER root
-#RUN jupyter labextension install @shahinrostami/theme-purple-please
-#RUN jupyter labextension install jupyterlab-theme-solarized-dark
 
 
 ## not running for some reason
@@ -858,9 +812,8 @@ RUN pip install --root-user-action ignore PyVirtualDisplay selenium \
  && fix-permissions "/home/${NB_USER}"
 
 RUN mkdir /chromedriver 
-#RUN wget https://chromedriver.storage.googleapis.com/100.0.4896.20/chromedriver_linux64.zip && unzip chromedriver_linux64.zip && cp chromedriver /chromedriver/
 RUN wget https://storage.googleapis.com/chrome-for-testing-public/136.0.7103.49/linux64/chromedriver-linux64.zip && unzip chromedriver-linux64.zip && cp chromedriver-linux64/chromedriver /chromedriver/
-RUN rm chromedriver_linux64.zip 
+RUN rm chromedriver-linux64.zip 
 RUN rm -r chromedriver-linux64
 ENV PATH "$PATH:/chromedriver"
 
@@ -878,8 +831,6 @@ RUN apt-get install -y dbus-x11 \
   xfce4-panel \
   xfce4-session \
   xfce4-settings \
- # xfce4-power-manager \
- # xfce4-screensaver \
   xorg 
 
 # AV - specifically remove and purge xfce4-screensaver to prevent screen locking.
@@ -918,12 +869,6 @@ USER root
 
 RUN apt-get -y install gtk2-engines-murrine gtk2-engines-pixbuf sassc optipng inkscape ibglib2.0-dev-bin libglib2.0-dev libxml2-utils
 
-#USER $NB_UID
-#RUN git clone https://github.com/vinceliuice/WhiteSur-gtk-theme && cd WhiteSur-gtk-theme && git checkout 422060b7db13fc3143146f62abb2c102039f06c3 && cd .. && \
-#  git clone https://github.com/vinceliuice/WhiteSur-icon-theme && \
-#  ./WhiteSur-gtk-theme/install.sh --nautilus-use-colors && \
-#  ./WhiteSur-icon-theme/install.sh   
-
 #USER root
 USER $NB_UID
 # torch:
@@ -931,7 +876,7 @@ RUN pip install --root-user-action ignore  torch_geometric \
  && fix-permissions "${CONDA_DIR}" \
  && fix-permissions "/home/${NB_USER}"
 
-RUN pip install --root-user-action ignore  pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.2.2+cu121.html \
+RUN pip install --root-user-action ignore  pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.6.0+cu126.html \
  && fix-permissions "${CONDA_DIR}" \
  && fix-permissions "/home/${NB_USER}"
 
@@ -948,7 +893,7 @@ RUN apt-get install  -y -q  libtool autoconf automake
 RUN apt-get install  -y -q  software-properties-common
 RUN add-apt-repository ppa:deadsnakes/ppa
 RUN add-apt-repository ppa:deadsnakes/ppa
-RUN apt-get install -y -q libpython3.11-dev
+RUN apt-get install -y -q libpython3.12-dev
 RUN add-apt-repository ppa:ubuntu-toolchain-r/test
 RUN apt-get update
 RUN apt-get -y -q install gcc-9
@@ -967,9 +912,6 @@ RUN fix-permissions /home/$NB_USER
 
 # Switch back to jovyan to avoid accidental container runs as root
 USER $NB_UID
-
-
-
 
 
 # Set env-var JUPYTER_TOKEN as static token
