@@ -886,6 +886,10 @@ RUN pip install pip jupyter-resource-usage \
 && fix-permissions "/home/${NB_USER}"
 
 USER root
+#muLab Requests July 9 2025
+RUN curl -fsSL https://ollama.com/install.sh | sh
+RUN apt-get install -y bpytop
+
 # other dev tools
 RUN apt-get install -y nvtop
 RUN apt-get install -y ncdu
