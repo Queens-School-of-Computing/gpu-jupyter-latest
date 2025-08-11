@@ -812,7 +812,7 @@ RUN pip install --root-user-action ignore PyVirtualDisplay selenium \
  && fix-permissions "/home/${NB_USER}"
 
 RUN mkdir /chromedriver 
-RUN wget https://storage.googleapis.com/chrome-for-testing-public/136.0.7103.49/linux64/chromedriver-linux64.zip && unzip chromedriver-linux64.zip && cp chromedriver-linux64/chromedriver /chromedriver/
+RUN wget https://storage.googleapis.com/chrome-for-testing-public/139.0.7258.66/linux64/chromedriver-linux64.zip && unzip chromedriver-linux64.zip && cp chromedriver-linux64/chromedriver /chromedriver/
 RUN rm chromedriver-linux64.zip 
 RUN rm -r chromedriver-linux64
 ENV PATH "$PATH:/chromedriver"
@@ -848,8 +848,8 @@ RUN wget 'https://sourceforge.net/projects/turbovnc/files/3.1/turbovnc_3.1_amd64
 USER root
 
 #https://update.code.visualstudio.com/1.93.1/linux-deb-arm64/stable
-
-RUN wget 'https://update.code.visualstudio.com/1.99.3/linux-deb-x64/stable' -O code.deb && \
+#RUN wget 'https://update.code.visualstudio.com/1.103.3/linux-deb-x64/stable' -O code.deb && \
+RUN wget 'https://update.code.visualstudio.com/latest/linux-deb-x64/stable' -O code.deb && \
     dpkg -i code.deb && \
     rm code.deb
 
@@ -888,7 +888,7 @@ RUN pip install pip jupyter-resource-usage \
 USER root
 #muLab Requests July 9 2025
 RUN curl -fsSL https://ollama.com/install.sh | sh
-RUN apt-get install -y bpytop
+RUN apt-get install -y btop
 
 # other dev tools
 RUN apt-get install -y nvtop
