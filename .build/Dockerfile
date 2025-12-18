@@ -7,7 +7,8 @@
 
 # Use NVIDIA CUDA as base image and run the same installation as in the other packages.
 # The version of cuda must match those of the packages installed in src/Dockerfile.gpulibs
-FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04
+#FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04
+FROM nvidia/cuda:13.0.2-cudnn-runtime-ubuntu24.04
 LABEL authors="Christoph Schranz <christoph.schranz@salzburgresearch.at>, Aaron Visser <aaron.visser@queensu.ca>"
 # This is a concatenated Dockerfile, the maintainers of subsequent sections may vary.
 RUN chmod 1777 /tmp && chmod 1777 /var/tmp
@@ -414,6 +415,7 @@ USER root
 # Default values can be overridden at build time
 # (ARGS are in lower case to distinguish them from ENV)
 # Check https://julialang.org/downloads/
+#ARG julia_version="1.12.3"
 ARG julia_version="1.10.5"
 
 # R pre-requisites
@@ -529,8 +531,9 @@ RUN mamba install --quiet --yes \
 # Install CUDA-specific nvidia libraries and update libcudnn8 before that
 # using device_lib.list_local_devices() the cudNN version is shown, adapt version to tested compat
 USER ${NB_UID}
-RUN pip install --upgrade pip && \
-    pip install --no-cache-dir tensorflow==2.18.0 keras==3.8.0 && \
+#RUN pip install --upgrade pip && \
+RUN pip install pip==25.1 && \
+    pip install --no-cache-dir tensorflow==2.20.0 keras==3.13.0 && \
     fix-permissions "${CONDA_DIR}" && \
     fix-permissions "/home/${NB_USER}"
 
@@ -541,9 +544,9 @@ RUN pip install --upgrade pip && \
 #  && torchviz==0.0.2 --extra-index-url https://download.pytorch.org/whl/cu121
 RUN set -ex \
  && buildDeps=' \
-    torch==2.6.0 \
-    torchvision==0.21.0 \
-    torchaudio==2.6.0 \
+    torch==2.9.1 \
+    torchvision==0.24.1 \
+    torchaudio==2.9.1 \
 ' \
  && pip install --no-cache-dir $buildDeps  --index-url https://download.pytorch.org/whl/cu126\
  && fix-permissions "${CONDA_DIR}" \
@@ -561,13 +564,19 @@ RUN apt-get update && \
 USER $NB_UID
 # These need to be two separate pip install commands, otherwise it will throw an error
 # attempting to resolve the nvidia-cuda-nvcc package at the same time as nvidia-pyindex
-RUN pip install --no-cache-dir nvidia-pyindex && \
-    pip install --no-cache-dir nvidia-cuda-nvcc && \
+#RUN pip install --no-cache-dir nvidia-pyindex && \
+#    pip install --no-cache-dir nvidia-cuda-nvcc && \
+#    fix-permissions "${CONDA_DIR}" && \
+#    fix-permissions "/home/${NB_USER}"
+
+
+RUN pip install --no-cache-dir wheel nvidia-pyindex && \    
+    pip install --no-cache-dir wheel nvidia-cuda-nvcc && \   
     fix-permissions "${CONDA_DIR}" && \
     fix-permissions "/home/${NB_USER}"
 
 # Install cuda-nvcc with sepecific version, see here: https://anaconda.org/nvidia/cuda-nvcc/labels
-RUN mamba install -c nvidia cuda-nvcc=12.6.85 -y && \
+RUN mamba install -c nvidia cuda-nvcc=13.0.88 -y && \
     mamba clean --all -f -y && \
     fix-permissions $CONDA_DIR && \
     fix-permissions /home/$NB_USER
@@ -603,8 +612,8 @@ RUN set -ex \
 # upgrade jupyter-server for compatibility
 RUN set -ex \
  && buildDeps=' \
-    distributed==2025.2.0 \
-    jupyter-server==2.15.0 \
+    distributed==2025.12.0 \
+    jupyter-server==2.17.0 \
  ' \
  && pip install --no-cache-dir $buildDeps \
  && fix-permissions "${CONDA_DIR}" \
@@ -616,7 +625,7 @@ RUN set -ex \
     jupyter_contrib_nbextensions==0.7.0 \
     jupyter_nbextensions_configurator==0.6.4 \
     # install git extension
-    jupyterlab-git==0.51.0 \
+    jupyterlab-git==0.51.3 \
     # install plotly extension
     plotly==5.24.1 \
     # install drawio and graphical extensions, not compatible with Jupyterlab 4.X yet
@@ -812,7 +821,7 @@ RUN pip install --root-user-action ignore PyVirtualDisplay selenium \
  && fix-permissions "/home/${NB_USER}"
 
 RUN mkdir /chromedriver 
-RUN wget https://storage.googleapis.com/chrome-for-testing-public/139.0.7258.66/linux64/chromedriver-linux64.zip && unzip chromedriver-linux64.zip && cp chromedriver-linux64/chromedriver /chromedriver/
+RUN wget https://storage.googleapis.com/chrome-for-testing-public/143.0.7499.146/linux64/chromedriver-linux64.zip && unzip chromedriver-linux64.zip && cp chromedriver-linux64/chromedriver /chromedriver/
 RUN rm chromedriver-linux64.zip 
 RUN rm -r chromedriver-linux64
 ENV PATH "$PATH:/chromedriver"
@@ -837,10 +846,10 @@ RUN apt-get install -y dbus-x11 \
 RUN apt-get remove -y -q --purge xfce4-screensaver
 
 # Remove light-locker to prevent screen lock
-RUN wget 'https://sourceforge.net/projects/turbovnc/files/3.1/turbovnc_3.1_amd64.deb/download' -O turbovnc_3.1_amd64.deb && \
-  apt-get install -y -q ./turbovnc_3.1_amd64.deb && \
+RUN wget 'https://github.com/TurboVNC/turbovnc/releases/download/3.3beta1/turbovnc_3.2.90_amd64.deb' -O turbovnc_3.2.90_amd64.deb && \
+  apt-get install -y -q ./turbovnc_3.2.90_amd64.deb && \
   apt-get remove -y -q --purge light-locker && \
-  rm ./turbovnc_3.1_amd64.deb && \
+  rm ./turbovnc_3.2.90_amd64.deb && \
   ln -s /opt/TurboVNC/bin/* /usr/local/bin/
 
 
@@ -889,6 +898,11 @@ USER root
 #muLab Requests July 9 2025
 RUN curl -fsSL https://ollama.com/install.sh | sh
 RUN apt-get install -y btop
+
+#miblab Ryan Zhou Requests Oct 2 2025
+RUN apt-get install -y npm
+RUN npm install -g @anthropic-ai/claude-code
+
 
 # other dev tools
 RUN apt-get install -y nvtop
