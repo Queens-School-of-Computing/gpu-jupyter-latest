@@ -652,7 +652,7 @@ ARG MATLAB_RELEASE=R2024b
 # Specify the list of products to install into MATLAB.
 #ARG MATLAB_PRODUCT_LIST="MATLAB"
 # toolboxes specified by gands lab
-ARG MATLAB_PRODUCT_LIST="MATLAB Communications_Toolbox Signal_Processing_Toolbox DSP_System_Toolbox Symbolic_Math_Toolbox Statistics_and_Machine_Learning_Toolbox Parallel_Computing_Toolbox Antenna_Toolbox 5G_Toolbox LTE_Toolbox Phased_Array_System_Toolbox Optimization_Toolbox Global_Optimization_Toolbox"
+ARG MATLAB_PRODUCT_LIST="MATLAB Communications_Toolbox Signal_Processing_Toolbox DSP_System_Toolbox Symbolic_Math_Toolbox Statistics_and_Machine_Learning_Toolbox Parallel_Computing_Toolbox Antenna_Toolbox 5G_Toolbox LTE_Toolbox Phased_Array_System_Toolbox Optimization_Toolbox Global_Optimization_Toolbox Mapping_Toolbox"
 
 
 # Specify MATLAB Install Location.
@@ -821,7 +821,7 @@ RUN pip install --root-user-action ignore PyVirtualDisplay selenium \
  && fix-permissions "/home/${NB_USER}"
 
 RUN mkdir /chromedriver 
-RUN wget https://storage.googleapis.com/chrome-for-testing-public/143.0.7499.146/linux64/chromedriver-linux64.zip && unzip chromedriver-linux64.zip && cp chromedriver-linux64/chromedriver /chromedriver/
+RUN wget https://storage.googleapis.com/chrome-for-testing-public/145.0.7632.46/linux64/chromedriver-linux64.zip && unzip chromedriver-linux64.zip && cp chromedriver-linux64/chromedriver /chromedriver/
 RUN rm chromedriver-linux64.zip 
 RUN rm -r chromedriver-linux64
 ENV PATH "$PATH:/chromedriver"
@@ -903,6 +903,20 @@ RUN apt-get install -y btop
 RUN apt-get install -y npm
 RUN npm install -g @anthropic-ai/claude-code
 
+#miblab Ryan Zhou Requests Feb 5 2026
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+RUN (type -p wget >/dev/null || (sudo apt update && sudo apt install wget -y)) \
+    && sudo mkdir -p -m 755 /etc/apt/keyrings \
+    && out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+    && cat $out | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
+    && sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && sudo mkdir -p -m 755 /etc/apt/sources.list.d \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+    && sudo apt update \
+    && sudo apt install gh -y
+
+# AV Feb 15 2026 - enable jupyter hub collaboration feature
+RUN mamba install -y -c conda-forge jupyter-collaboration && mamba clean -afy
 
 # other dev tools
 RUN apt-get install -y nvtop

@@ -18,6 +18,10 @@ c.InlineBackend.figure_formats = {"png", "jpeg", "svg", "pdf"}
 # https://github.com/jupyter/notebook/issues/3130
 c.FileContentsManager.delete_to_trash = False
 
+# AV Feb 23 2026 - add atom news feed.
+c.LabApp.news_url = "https://raw.githubusercontent.com/Queens-School-of-Computing/Lobot/newcluster/announcements.atom"
+
+
 # Generate a self-signed certificate
 OPENSSL_CONFIG = """\
 [req]
