@@ -20,8 +20,8 @@ RUN set -ex \
 # upgrade jupyter-server for compatibility
 RUN set -ex \
  && buildDeps=' \
-    distributed==2025.2.0 \
-    jupyter-server==2.15.0 \
+    distributed==2025.12.0 \
+    jupyter-server==2.17.0 \
  ' \
  && pip install --no-cache-dir $buildDeps \
  && fix-permissions "${CONDA_DIR}" \
@@ -33,7 +33,7 @@ RUN set -ex \
     jupyter_contrib_nbextensions==0.7.0 \
     jupyter_nbextensions_configurator==0.6.4 \
     # install git extension
-    jupyterlab-git==0.51.0 \
+    jupyterlab-git==0.51.3 \
     # install plotly extension
     plotly==5.24.1 \
     # install drawio and graphical extensions, not compatible with Jupyterlab 4.X yet

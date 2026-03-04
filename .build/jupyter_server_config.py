@@ -9,7 +9,8 @@ from pathlib import Path
 from jupyter_core.paths import jupyter_data_dir
 
 c = get_config()  # noqa: F821
-c.ServerApp.ip = "0.0.0.0"
+# Listen on all interfaces (ipv4 and ipv6)
+c.ServerApp.ip = ""
 c.ServerApp.open_browser = False
 
 # to output both image/svg+xml and application/pdf plot formats in the notebook file
@@ -17,10 +18,6 @@ c.InlineBackend.figure_formats = {"png", "jpeg", "svg", "pdf"}
 
 # https://github.com/jupyter/notebook/issues/3130
 c.FileContentsManager.delete_to_trash = False
-
-# AV Feb 23 2026 - add atom news feed.
-c.LabApp.news_url = "https://raw.githubusercontent.com/Queens-School-of-Computing/Lobot/newcluster/announcements.atom"
-
 
 # Generate a self-signed certificate
 OPENSSL_CONFIG = """\

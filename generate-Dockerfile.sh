@@ -122,6 +122,9 @@ else
     cp -r $STACKS_DIR/minimal-notebook/setup-scripts .build/
     cp $STACKS_DIR/minimal-notebook/Rprofile.site .build/
 fi
+# Override setup_julia.py with our pinned version (avoids upstream "latest Julia" fetching)
+cp custom/setup_julia.py .build/setup-scripts/setup_julia.py
+chmod +x .build/setup-scripts/setup_julia.py
 
 echo "
 ############################################################################
@@ -170,6 +173,20 @@ if [[ "$no_useful_packages" != 1 ]]; then
 else
   echo "Set 'no-useful-packages', not installing stuff within custom/usefulpackages.Dockerfile."
 fi
+
+echo "
+############################################################################
+########################## QSC MATLAB #####################################
+############################################################################
+" >> $DOCKERFILE
+cat custom/matlab.Dockerfile >> $DOCKERFILE
+
+echo "
+############################################################################
+########################## QSC packages ###################################
+############################################################################
+" >> $DOCKERFILE
+cat custom/qscpackages.Dockerfile >> $DOCKERFILE
 
 # Copy the demo notebooks and change permissions
 cp -r extra/Getting_Started data
