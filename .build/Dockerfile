@@ -7,7 +7,8 @@
 
 # Use NVIDIA CUDA as base image and run the same installation as in the other packages.
 # The version of cuda must match those of the packages installed in src/Dockerfile.gpulibs
-FROM nvidia/cuda:13.0.2-cudnn-runtime-ubuntu24.04
+#FROM nvidia/cuda:13.0.2-cudnn-runtime-ubuntu24.04
+FROM nvidia/cuda:13.2.1-cudnn-runtime-ubuntu24.04
 LABEL authors="Christoph Schranz <christoph.schranz@salzburgresearch.at>, Aaron Visser <aaron.visser@queensu.ca>"
 
 # This is a concatenated Dockerfile, the maintainers of subsequent sections may vary.
@@ -478,6 +479,7 @@ RUN mamba install --quiet --yes \
 # Install CUDA-specific nvidia libraries and update libcudnn8 before that
 # using device_lib.list_local_devices() the cudNN version is shown, adapt version to tested compat
 USER ${NB_UID}
+
 RUN pip install pip==25.1 && \
     pip install --no-cache-dir tensorflow==2.20.0 keras==3.13.0 && \
     fix-permissions "${CONDA_DIR}" && \
@@ -488,11 +490,20 @@ RUN pip install pip==25.1 && \
 # Installation via conda leads to errors installing cudatoolkit=11.1
 # RUN pip install --no-cache-dir torch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 \
 #  && torchviz==0.0.2 --extra-index-url https://download.pytorch.org/whl/cu121
+# torch 2.11.0 vision 0.26.0 audio 2.11.0
+#RUN set -ex \
+# && buildDeps=' \
+#    torch==2.9.1 \
+#    torchvision==0.24.1 \
+#    torchaudio==2.9.1 \
+#' \
+
+
 RUN set -ex \
  && buildDeps=' \
-    torch==2.9.1 \
-    torchvision==0.24.1 \
-    torchaudio==2.9.1 \
+    torch==2.11.0 \
+    torchvision==0.26.0 \
+    torchaudio==2.11.0 \
 ' \
  && pip install --no-cache-dir $buildDeps  --index-url https://download.pytorch.org/whl/cu126\
  && fix-permissions "${CONDA_DIR}" \
@@ -522,7 +533,9 @@ RUN pip install --no-cache-dir wheel nvidia-pyindex && \
 
 # Install cuda-nvcc with sepecific version, see here:
 # https://anaconda.org/nvidia/cuda-nvcc/labels
-RUN mamba install -c nvidia cuda-nvcc=13.0.88 -y && \
+# latest cuda 13.2.78
+# RUN mamba install -c nvidia cuda-nvcc=13.0.88 -y && \
+RUN mamba install -c nvidia cuda-nvcc=13.2.78 -y && \
     mamba clean --all -f -y && \
     fix-permissions $CONDA_DIR && \
     fix-permissions /home/$NB_USER
@@ -797,12 +810,15 @@ RUN apt-get install -y dbus-x11 \
 RUN apt-get remove -y -q --purge xfce4-screensaver
 
 # Remove light-locker to prevent screen lock
-RUN wget 'https://github.com/TurboVNC/turbovnc/releases/download/3.3beta1/turbovnc_3.2.90_amd64.deb' -O turbovnc_3.2.90_amd64.deb && \
-  apt-get install -y -q ./turbovnc_3.2.90_amd64.deb && \
+#RUN wget 'https://github.com/TurboVNC/turbovnc/releases/download/3.3beta1/turbovnc_3.2.90_amd64.deb' -O turbovnc_3.2.90_amd64.deb && \
+RUN wget 'https://github.com/TurboVNC/turbovnc/releases/download/3.3/turbovnc_3.3_amd64.deb' -O turbovnc_3.3_amd64.deb && \
+  apt-get install -y -q ./turbovnc_3.3_amd64.deb && \
   apt-get remove -y -q --purge light-locker && \
-  rm ./turbovnc_3.2.90_amd64.deb && \
-  ln -s /opt/TurboVNC/bin/* /usr/local/bin/
+  rm ./turbovnc_3.3_amd64.deb && \
+  ln -sf /opt/TurboVNC/bin/* /usr/local/bin/
 
+# Fix AV Apr 24 2026 - MIB with RTX6000Blackwell broke vnc, had to set this extension to get it working again.
+RUN echo '$serverArgs = "-extension GLX";' >> /etc/turbovncserver.conf
 
 # AV Sept 26 2024 - install full vscode
 USER root
@@ -855,7 +871,10 @@ RUN apt-get install -y npm
 RUN npm install -g @anthropic-ai/claude-code
 
 #miblab Ryan Zhou Requests Feb 5 2026
+USER $NB_UID
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+
+USER root
 RUN (type -p wget >/dev/null || (sudo apt update && sudo apt install wget -y)) \
     && sudo mkdir -p -m 755 /etc/apt/keyrings \
     && out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \
