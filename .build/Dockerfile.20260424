@@ -7,16 +7,16 @@
 
 # Use NVIDIA CUDA as base image and run the same installation as in the other packages.
 # The version of cuda must match those of the packages installed in src/Dockerfile.gpulibs
-FROM nvidia/cuda:12.6.1-cudnn-runtime-ubuntu22.04
-#FROM nvidia/cuda:12.6.1-cudnn-runtime-ubuntu24.04
-LABEL authors="Christoph Schranz <christoph.schranz@salzburgresearch.at>, Mathematical Michael <consistentbayes@gmail.com>"
+#FROM nvidia/cuda:13.0.2-cudnn-runtime-ubuntu24.04
+FROM nvidia/cuda:13.2.1-cudnn-runtime-ubuntu24.04
+LABEL authors="Christoph Schranz <christoph.schranz@salzburgresearch.at>, Aaron Visser <aaron.visser@queensu.ca>"
+
 # This is a concatenated Dockerfile, the maintainers of subsequent sections may vary.
 RUN chmod 1777 /tmp && chmod 1777 /var/tmp
 
 # install apt-utils in header to fix warnings in docker-stacks
 RUN apt-get update && \
     apt-get -y install apt-utils
-
 ############################################################################
 #################### Dependency: jupyter/docker-stacks-foundation ##########
 ############################################################################
@@ -24,10 +24,9 @@ RUN apt-get update && \
 # Copyright (c) Jupyter Development Team.
 # Distributed under the terms of the Modified BSD License.
 
-# Ubuntu 22.04 (jammy)
-# https://hub.docker.com/_/ubuntu/tags?page=1&name=jammy
-ARG ROOT_CONTAINER=ubuntu:22.04
-#ARG ROOT_CONTAINER=ubuntu:24.04
+# Ubuntu 24.04 (noble)
+# https://hub.docker.com/_/ubuntu/tags?page=1&name=noble
+ARG ROOT_IMAGE=ubuntu:24.04
 
 
 LABEL maintainer="Jupyter Project <jupyter@googlegroups.com>"
@@ -43,19 +42,20 @@ USER root
 
 # Install all OS dependencies for the Server that starts
 # but lacks all features (e.g., download as all possible file formats)
-ENV DEBIAN_FRONTEND noninteractive
+ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update --yes && \
     # - `apt-get upgrade` is run to patch known vulnerabilities in system packages
     #   as the Ubuntu base image is rebuilt too seldom sometimes (less than once a month)
     apt-get upgrade --yes && \
     apt-get install --yes --no-install-recommends \
-        # https://superuser.com/questions/1308926/error-ca-certificates-is-broken-or-not-fully-installed
-        debconf  && \
-    apt-get install --yes --no-install-recommends \
     # - bzip2 is necessary to extract the micromamba executable.
     bzip2 \
     ca-certificates \
     locales \
+    # - `netbase` provides /etc/{protocols,rpc,services}, part of POSIX
+    #   and required by various C functions like getservbyname and getprotobyname
+    #   https://github.com/jupyter/docker-stacks/pull/2129
+    netbase \
     sudo \
     # - `tini` is installed as a helpful container entrypoint,
     #   that reaps zombie processes and such of the actual executable we want to start
@@ -88,10 +88,15 @@ RUN chmod a+rx /usr/local/bin/fix-permissions
 RUN sed -i 's/^#force_color_prompt=yes/force_color_prompt=yes/' /etc/skel/.bashrc && \
     # More information in: https://github.com/jupyter/docker-stacks/pull/2047
     # and docs: https://docs.conda.io/projects/conda/en/latest/dev-guide/deep-dives/activation.html
-    #echo 'eval "$(conda shell.bash hook)"' >> /etc/skel/.bashrc
-    echo 'eval "$(mamba shell.bash hook)"' >> /etc/skel/.bashrc
+    echo 'eval "$(conda shell.bash hook)"' >> /etc/skel/.bashrc
 
-# Create NB_USER with name jovyan user with UID=1000 and in the 'users' group
+# Delete existing user with UID="${NB_UID}" if it exists
+# hadolint ignore=SC2046
+RUN if grep -q "${NB_UID}" /etc/passwd; then \
+        userdel --remove $(id -un "${NB_UID}"); \
+    fi
+
+# Create "${NB_USER}" user (`jovyan` by default) with UID="${NB_UID}" (`1000` by default) and in the 'users' group
 # and make sure these dirs are writable by the `users` group.
 RUN echo "auth requisite pam_deny.so" >> /etc/pam.d/su && \
     sed -i.bak -e 's/^%admin/#%admin/' /etc/sudoers && \
@@ -106,7 +111,7 @@ RUN echo "auth requisite pam_deny.so" >> /etc/pam.d/su && \
 USER ${NB_UID}
 
 # Pin the Python version here, or set it to "default"
-ARG PYTHON_VERSION=3.11
+ARG PYTHON_VERSION=3.12
 
 # Setup work directory for backward-compatibility
 RUN mkdir "/home/${NB_USER}/work" && \
@@ -140,14 +145,14 @@ RUN set -x && \
         --root-prefix="${CONDA_DIR}" \
         --prefix="${CONDA_DIR}" \
         --yes \
-        "${PYTHON_SPECIFIER}" \
+        'jupyter_core' \
+        'conda' \
         'mamba' \
-        'jupyter_core' && \
+        "${PYTHON_SPECIFIER}" && \
     rm -rf /tmp/bin/ && \
     # Pin major.minor version of python
     # https://conda.io/projects/conda/en/latest/user-guide/tasks/manage-pkgs.html#preventing-packages-from-updating-pinning
-    #mamba list --full-name 'python' | tail -1 | tr -s ' ' | cut -d ' ' -f 1,2 | sed 's/\.[^.]*$/.*/' >> "${CONDA_DIR}/conda-meta/pinned" && \
-    mamba list 'python' | tail -1 | tr -s ' ' | cut -d ' ' -f 1,2 | sed 's/\.[^.]*$/.*/' >> "${CONDA_DIR}/conda-meta/pinned" && \
+    mamba list --full-name 'python' | awk 'END{sub("[^.]*$", "*", $2); print $1 " " $2}' >> "${CONDA_DIR}/conda-meta/pinned" && \
     mamba clean --all -f -y && \
     fix-permissions "${CONDA_DIR}" && \
     fix-permissions "/home/${NB_USER}"
@@ -206,7 +211,7 @@ RUN apt-get update --yes && \
 
 USER ${NB_UID}
 
-# Install JupyterLab, Jupyter Notebook, JupyterHub and NBClassic
+# Install JupyterHub, JupyterLab, NBClassic and Jupyter Notebook
 # Generate a Jupyter Server config
 # Cleanup temporary files
 # Correct permissions
@@ -214,14 +219,16 @@ USER ${NB_UID}
 # files across image layers when the permissions change
 WORKDIR /tmp
 RUN mamba install --yes \
-    #'jupyterlab==4.2.4' \
+    'jupyterhub-singleuser' \
     'jupyterlab' \
-    'notebook' \
-    'jupyterhub==5.2.0' \
-    'nbclassic' && \
+    'nbclassic' \
+    # Sometimes, when the new version of `jupyterlab` is released, latest `notebook` might not support it for some time
+    # Old versions of `notebook` (<v7) didn't have a restriction on the `jupyterlab` version, and old `notebook` is getting installed
+    # That's why we have to pin the minimum notebook version
+    # More info: https://github.com/jupyter/docker-stacks/pull/2167
+    'notebook>=7.2.2' && \
     jupyter server --generate-config && \
     mamba clean --all -f -y && \
-    npm cache clean --force && \
     jupyter lab clean && \
     rm -rf "/home/${NB_USER}/.cache/yarn" && \
     fix-permissions "${CONDA_DIR}" && \
@@ -347,7 +354,7 @@ RUN mamba install --yes \
     'dask' \
     'dill' \
     'h5py' \
-    'ipympl'\
+    'ipympl' \
     'ipywidgets' \
     'jupyterlab-git' \
     'matplotlib-base' \
@@ -365,7 +372,7 @@ RUN mamba install --yes \
     'sqlalchemy' \
     'statsmodels' \
     'sympy' \
-    'widgetsnbextension'\
+    'widgetsnbextension' \
     'xlrd' && \
     mamba clean --all -f -y && \
     fix-permissions "${CONDA_DIR}" && \
@@ -393,6 +400,7 @@ WORKDIR "${HOME}"
   
 # Copyright (c) Jupyter Development Team.
 # Distributed under the terms of the Modified BSD License.
+ARG REGISTRY=quay.io
 ARG OWNER=jupyter
 
 LABEL maintainer="Jupyter Project <jupyter@googlegroups.com>"
@@ -402,12 +410,6 @@ LABEL maintainer="Jupyter Project <jupyter@googlegroups.com>"
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 USER root
-
-# Julia installation
-# Default values can be overridden at build time
-# (ARGS are in lower case to distinguish them from ENV)
-# Check https://julialang.org/downloads/
-ARG julia_version="1.10.5"
 
 # R pre-requisites
 RUN apt-get update --yes && \
@@ -420,39 +422,19 @@ RUN apt-get update --yes && \
 # Julia dependencies
 # install Julia packages in /opt/julia instead of ${HOME}
 ENV JULIA_DEPOT_PATH=/opt/julia \
-    JULIA_PKGDIR=/opt/julia \
-    JULIA_VERSION="${julia_version}"
+    JULIA_PKGDIR=/opt/julia
 
-WORKDIR /tmp
-
-# hadolint ignore=SC2046
-RUN set -x && \
-    julia_arch=$(uname -m) && \
-    julia_short_arch="${julia_arch}" && \
-    if [ "${julia_short_arch}" == "x86_64" ]; then \
-      julia_short_arch="x64"; \
-    fi; \
-    julia_installer="julia-${JULIA_VERSION}-linux-${julia_arch}.tar.gz" && \
-    julia_major_minor=$(echo "${JULIA_VERSION}" | cut -d. -f 1,2) && \
-    mkdir "/opt/julia-${JULIA_VERSION}" && \
-    wget -q "https://julialang-s3.julialang.org/bin/linux/${julia_short_arch}/${julia_major_minor}/${julia_installer}" && \
-    tar xzf "${julia_installer}" -C "/opt/julia-${JULIA_VERSION}" --strip-components=1 && \
-    rm "${julia_installer}" && \
-    ln -fs /opt/julia-*/bin/julia /usr/local/bin/julia
-
-# Show Julia where conda libraries are \
-RUN mkdir /etc/julia && \
-    echo "push!(Libdl.DL_LOAD_PATH, \"${CONDA_DIR}/lib\")" >> /etc/julia/juliarc.jl && \
-    # Create JULIA_PKGDIR \
-    mkdir "${JULIA_PKGDIR}" && \
-    chown "${NB_USER}" "${JULIA_PKGDIR}" && \
-    fix-permissions "${JULIA_PKGDIR}"
+# Setup Julia
+RUN /opt/setup-scripts/setup_julia.py
 
 USER ${NB_UID}
 
+# Setup IJulia kernel & other packages
+RUN /opt/setup-scripts/setup-julia-packages.bash
+
 # R packages including IRKernel which gets installed globally.
 # r-e1071: dependency of the caret R package
-RUN mamba install --quiet --yes \
+RUN mamba install --yes \
     'r-base' \
     'r-caret' \
     'r-crayon' \
@@ -470,44 +452,19 @@ RUN mamba install --quiet --yes \
     'r-rodbc' \
     'r-rsqlite' \
     'r-shiny' \
+    'r-tidymodels' \
     'r-tidyverse' \
+    'rpy2' \
     'unixodbc' && \
     mamba clean --all -f -y && \
     fix-permissions "${CONDA_DIR}" && \
     fix-permissions "/home/${NB_USER}"
 
-# `rpy2` and `r-tidymodels` are not easy to install under aarch64
-RUN set -x && \
-    arch=$(uname -m) && \
-    if [ "${arch}" == "x86_64" ]; then \
-        mamba install --quiet --yes \
-            'rpy2' \
-            'r-tidymodels' && \
-            mamba clean --all -f -y && \
-            fix-permissions "${CONDA_DIR}" && \
-            fix-permissions "/home/${NB_USER}"; \
-    fi;
-
-# Add Julia packages.
-# Install IJulia as jovyan and then move the kernelspec out
-# to the system share location. Avoids problems with runtime UID change not
-# taking effect properly on the .local folder in the jovyan home dir.
-RUN julia -e 'import Pkg; Pkg.update()' && \
-    julia -e 'import Pkg; Pkg.add("HDF5")' && \
-    julia -e 'using Pkg; pkg"add IJulia"; pkg"precompile"' && \
-    # move kernelspec out of home \
-    mv "${HOME}/.local/share/jupyter/kernels/julia"* "${CONDA_DIR}/share/jupyter/kernels/" && \
-    chmod -R go+rx "${CONDA_DIR}/share/jupyter" && \
-    rm -rf "${HOME}/.local" && \
-    fix-permissions "${JULIA_PKGDIR}" "${CONDA_DIR}/share/jupyter"
-
-WORKDIR "${HOME}"
-
 ############################################################################
 ########################## Dependency: gpulibs #############################
 ############################################################################
 
-LABEL maintainer="Christoph Schranz <christoph.schranz@salzburgresearch.at>, Mathematical Michael <consistentbayes@gmail.com>"
+LABEL authors="Christoph Schranz <christoph.schranz@salzburgresearch.at>"
 
 # Install dependencies for e.g. PyTorch
 RUN mamba install --quiet --yes \
@@ -522,8 +479,9 @@ RUN mamba install --quiet --yes \
 # Install CUDA-specific nvidia libraries and update libcudnn8 before that
 # using device_lib.list_local_devices() the cudNN version is shown, adapt version to tested compat
 USER ${NB_UID}
-RUN pip install --upgrade pip && \
-    pip install --no-cache-dir tensorflow==2.15.1 keras==2.15.0 && \
+
+RUN pip install pip==25.1 && \
+    pip install --no-cache-dir tensorflow==2.20.0 keras==3.13.0 && \
     fix-permissions "${CONDA_DIR}" && \
     fix-permissions "/home/${NB_USER}"
 
@@ -532,14 +490,22 @@ RUN pip install --upgrade pip && \
 # Installation via conda leads to errors installing cudatoolkit=11.1
 # RUN pip install --no-cache-dir torch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 \
 #  && torchviz==0.0.2 --extra-index-url https://download.pytorch.org/whl/cu121
+# torch 2.11.0 vision 0.26.0 audio 2.11.0
+#RUN set -ex \
+# && buildDeps=' \
+#    torch==2.9.1 \
+#    torchvision==0.24.1 \
+#    torchaudio==2.9.1 \
+#' \
+
+
 RUN set -ex \
  && buildDeps=' \
-    torch==2.2.2 \
-    torchvision==0.17.2 \
-    torchaudio==2.2.2 \
+    torch==2.11.0 \
+    torchvision==0.26.0 \
+    torchaudio==2.11.0 \
 ' \
- #&& pip install --no-cache-dir $buildDeps  --extra-index-url https://download.pytorch.org/whl/cu121 \
- && pip install $buildDeps  --extra-index-url https://download.pytorch.org/whl/cu121 \
+ && pip install --no-cache-dir $buildDeps  --index-url https://download.pytorch.org/whl/cu126\
  && fix-permissions "${CONDA_DIR}" \
  && fix-permissions "/home/${NB_USER}"
 
@@ -555,14 +521,21 @@ RUN apt-get update && \
 USER $NB_UID
 # These need to be two separate pip install commands, otherwise it will throw an error
 # attempting to resolve the nvidia-cuda-nvcc package at the same time as nvidia-pyindex
-RUN pip install --no-cache-dir nvidia-pyindex && \
-    pip install --no-cache-dir nvidia-cuda-nvcc && \
+#RUN pip install --no-cache-dir nvidia-pyindex && \
+#    pip install --no-cache-dir nvidia-cuda-nvcc && \
+#    fix-permissions "${CONDA_DIR}" && \
+#    fix-permissions "/home/${NB_USER}"
+
+RUN pip install --no-cache-dir wheel nvidia-pyindex && \
+    pip install --no-cache-dir wheel nvidia-cuda-nvcc && \
     fix-permissions "${CONDA_DIR}" && \
     fix-permissions "/home/${NB_USER}"
 
-# Install cuda-nvcc with sepecific version, see here: https://anaconda.org/nvidia/cuda-nvcc/labels
-#RUN mamba install -c nvidia cuda-nvcc=12.2.140 -y && \
-RUN mamba install -c nvidia cuda-nvcc=12.6.68 -y && \
+# Install cuda-nvcc with sepecific version, see here:
+# https://anaconda.org/nvidia/cuda-nvcc/labels
+# latest cuda 13.2.78
+# RUN mamba install -c nvidia cuda-nvcc=13.0.88 -y && \
+RUN mamba install -c nvidia cuda-nvcc=13.2.78 -y && \
     mamba clean --all -f -y && \
     fix-permissions $CONDA_DIR && \
     fix-permissions /home/$NB_USER
@@ -571,12 +544,11 @@ USER root
 RUN ln -s $CONDA_DIR/bin/ptxas /usr/bin/ptxas
 
 USER $NB_UID
-
   ############################################################################
   ############################ Useful packages ###############################
   ############################################################################
   
-LABEL authors="Christoph Schranz <christoph.schranz@salzburgresearch.at>, Mathematical Michael <consistentbayes@gmail.com>"
+LABEL authors="Christoph Schranz <christoph.schranz@salzburgresearch.at>"
 
 USER root
 
@@ -589,7 +561,7 @@ USER $NB_UID
 RUN set -ex \
  && buildDeps=' \
     graphviz==0.20.3 \
-    pytest==8.1.1 \
+    pytest==8.3.4 \
  ' \
  && pip install --no-cache-dir $buildDeps \
  && fix-permissions "${CONDA_DIR}" \
@@ -598,8 +570,8 @@ RUN set -ex \
 # upgrade jupyter-server for compatibility
 RUN set -ex \
  && buildDeps=' \
-    distributed==2024.9.0 \
-    jupyter-server==2.14.2 \
+    distributed==2025.12.0 \
+    jupyter-server==2.17.0 \
  ' \
  && pip install --no-cache-dir $buildDeps \
  && fix-permissions "${CONDA_DIR}" \
@@ -611,7 +583,7 @@ RUN set -ex \
     jupyter_contrib_nbextensions==0.7.0 \
     jupyter_nbextensions_configurator==0.6.4 \
     # install git extension
-    jupyterlab-git==0.50.1 \
+    jupyterlab-git==0.51.3 \
     # install plotly extension
     plotly==5.24.1 \
     # install drawio and graphical extensions, not compatible with Jupyterlab 4.X yet
@@ -627,7 +599,9 @@ RUN set -ex \
 
 # Switch back to jovyan to avoid accidental container runs as root
 USER $NB_UID
-
+############################################################################
+########################## QSC MATLAB #####################################
+############################################################################
 
 #################################
 ############## QSC Matlab ########
@@ -637,7 +611,10 @@ USER $NB_UID
 ARG MATLAB_RELEASE=R2024b
 
 # Specify the list of products to install into MATLAB.
-ARG MATLAB_PRODUCT_LIST="MATLAB"
+#ARG MATLAB_PRODUCT_LIST="MATLAB"
+# toolboxes specified by gands lab
+ARG MATLAB_PRODUCT_LIST="MATLAB Communications_Toolbox Signal_Processing_Toolbox DSP_System_Toolbox Symbolic_Math_Toolbox Statistics_and_Machine_Learning_Toolbox Parallel_Computing_Toolbox Antenna_Toolbox 5G_Toolbox LTE_Toolbox Phased_Array_System_Toolbox Optimization_Toolbox Global_Optimization_Toolbox Mapping_Toolbox"
+
 
 # Specify MATLAB Install Location.
 ARG MATLAB_INSTALL_LOCATION="/opt/matlab/${MATLAB_RELEASE}"
@@ -655,6 +632,21 @@ ARG MATLAB_PRODUCT_LIST
 ARG MATLAB_INSTALL_LOCATION
 ARG LICENSE_SERVER
 
+USER root
+
+COPY base-matlabdependencies.txt /tmp/base-matlabdependencies.txt
+
+RUN export DEBIAN_FRONTEND=noninteractive \
+    && apt-get update \
+    && apt-get install --no-install-recommends -y `cat /tmp/base-matlabdependencies.txt` \
+    && apt-get clean && apt-get -y autoremove \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN [ -d /usr/share/X11/xkb ] || mkdir -p /usr/share/X11/xkb
+
+
+
+
 # Install mpm dependencies.
 RUN export DEBIAN_FRONTEND=noninteractive \
     && apt-get update \
@@ -665,27 +657,46 @@ RUN export DEBIAN_FRONTEND=noninteractive \
     && apt-get autoremove \
     && rm -rf /var/lib/apt/lists/*
 
+USER root
+
 # Add "matlab" user and grant sudo permission.
-RUN adduser --shell /bin/bash --disabled-password --gecos "" matlab \
-    && echo "matlab ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/matlab \
-    && chmod 0440 /etc/sudoers.d/matlab
+#RUN adduser --shell /bin/bash --disabled-password --gecos "" matlab \
+#    && echo "matlab ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/matlab \
+#    && chmod 0440 /etc/sudoers.d/matlab
 
 # Set user and work directory.
-USER matlab
-WORKDIR /home/matlab
+#USER matlab
+#WORKDIR /home/matlab
 
+USER root
+RUN mkdir -p "${MATLAB_INSTALL_LOCATION}" \
+    && chown "${NB_USER}" "${MATLAB_INSTALL_LOCATION}"
+
+USER $NB_UID
 # Run mpm to install MATLAB in the target location and delete the mpm installation afterwards.
 # If mpm fails to install successfully, then print the logfile in the terminal, otherwise clean up.
 # Pass in $HOME variable to install support packages into the user's HOME folder.
 RUN wget -q https://www.mathworks.com/mpm/glnxa64/mpm \
     && chmod +x mpm \
-    && sudo HOME=${HOME} ./mpm install \
+    && mkdir -p "${MATLAB_INSTALL_LOCATION}" \
+    && chown "${NB_USER}" "${MATLAB_INSTALL_LOCATION}"  \
+    && HOME=${HOME} ./mpm install \
     --release=${MATLAB_RELEASE} \
     --destination=${MATLAB_INSTALL_LOCATION} \
     --products ${MATLAB_PRODUCT_LIST} \
     || (echo "MPM Installation Failure. See below for more information:" && cat /tmp/mathworks_root.log && false) \
-    && sudo rm -rf mpm /tmp/mathworks_root.log \
-    && sudo ln -s ${MATLAB_INSTALL_LOCATION}/bin/matlab /usr/local/bin/matlab
+    && rm -rf mpm /tmp/mathworks_root.log
+
+USER root
+RUN ln -s ${MATLAB_INSTALL_LOCATION}/bin/matlab /usr/local/bin/matlab
+
+RUN apt-get update \
+  && apt install -y xvfb
+
+USER ${NB_UID}
+RUN pip install --root-user-action ignore jupyter-matlab-proxy
+
+USER root
 
 # Note: Uncomment one of the following two ways to configure the license server.
 
@@ -708,6 +719,9 @@ COPY network.lic ${MATLAB_INSTALL_LOCATION}/licenses/
 # https://github.com/mathworks-ref-arch/matlab-dockerfile#help-make-matlab-even-better
 ENV MW_DDUX_FORCE_ENABLE=true MW_CONTEXT_TAGS=MATLAB:DOCKERFILE:V1
 
+############################################################################
+########################## QSC packages ###################################
+############################################################################
 
 ############################################################################
 ############################ QSC packages ###############################
@@ -717,45 +731,22 @@ LABEL authors="Aaron Visser"
 
 USER root
 
-# ad-hoc fix for compatibility to the cluster
-#RUN pip install jupyterhub==1.3.0 jupyterlab==2.2.9 jupyter-server==1.13.5 
 
 USER $NB_UID
-#RUN pip install --root-user-action ignore --no-cache-dir jupyter-server-proxy==4.4.0 \
-#RUN pip install --root-user-action ignore --no-cache-dir jupyter-server-proxy jupyter-vscode-proxy lief code-server \
-RUN pip install --root-user-action ignore --no-cache-dir jupyterhub==5.2.0 jupyterlab==4.2.5 jupyter-server==2.14.2
+RUN pip install --root-user-action ignore --no-cache-dir jupyterhub jupyterlab jupyter-server
 RUN pip install --root-user-action ignore --no-cache-dir jupyter-server-proxy jupyter-vscode-proxy lief lckr_jupyterlab_variableinspector \
  && fix-permissions "${CONDA_DIR}" \
  && fix-permissions "/home/${NB_USER}"
-
-#RUN code-server --install-extension ms-python.python
-
-#RUN jupyter labextension install --log-level=0 @jupyterlab/server-proxy
-#RUN jupyter labextension install --log-level=0 @jupyterlab/server-proxy
-
-#RUN jupyter server extension enable --sys-prefix jupyter_server_proxy
-
-##RUN jupyter server extension enable --py jupyter_server_proxy 1
-
-#ENV NODE_OPTIONS=--openssl-legacy-provider
-#RUN jupyter labextension install --log-level=0 @jupyterlab/server-proxy@4.4.0
-#RUN pip install --root-user-action ignore  jupyter-vscode-proxy lief \
-# && fix-permissions "${CONDA_DIR}" \
-# && fix-permissions "/home/${NB_USER}"
 
 USER root
 RUN curl -fsSL https://code-server.dev/install.sh | sh
 RUN code-server --install-extension ms-python.python
 
-# ssh ando thers
+# ssh and others
 RUN apt-get update \
   && apt-get install -y openssh-client vim tmux upx-ucl file libmagic-dev tree p7zip-full
-# RUN apt-get install -y libtool autoconf automake=1.16.3 ppa libpython3.9-dev gcc=9.4.0
 
 USER $NB_UID
-#USER root
-#RUN jupyter labextension install @shahinrostami/theme-purple-please
-#RUN jupyter labextension install jupyterlab-theme-solarized-dark
 
 
 ## not running for some reason
@@ -767,7 +758,7 @@ RUN mamba install --quiet --yes \
 # RUN dpkg --add-architecture i386 && apt-get -y update
 # RUN apt-get -y install python3-pip
 
-# RUN mkdir /ida 
+# RUN mkdir /ida
 # RUN mkdir /ida_install
 # COPY ida.run /ida_install
 # RUN chmod +x /ida_install/ida.run
@@ -786,16 +777,17 @@ USER root
 # Chrome-driver
 RUN curl -LO https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
 RUN apt-get install -y ./google-chrome-stable_current_amd64.deb
-RUN rm google-chrome-stable_current_amd64.deb 
+RUN rm google-chrome-stable_current_amd64.deb
 
 
 RUN pip install --root-user-action ignore PyVirtualDisplay selenium \
  && fix-permissions "${CONDA_DIR}" \
  && fix-permissions "/home/${NB_USER}"
 
-RUN mkdir /chromedriver 
-RUN wget https://chromedriver.storage.googleapis.com/100.0.4896.20/chromedriver_linux64.zip && unzip chromedriver_linux64.zip && cp chromedriver /chromedriver/
-RUN rm chromedriver_linux64.zip chromedriver
+RUN mkdir /chromedriver
+RUN wget https://storage.googleapis.com/chrome-for-testing-public/145.0.7632.46/linux64/chromedriver-linux64.zip && unzip chromedriver-linux64.zip && cp chromedriver-linux64/chromedriver /chromedriver/
+RUN rm chromedriver-linux64.zip
+RUN rm -r chromedriver-linux64
 ENV PATH "$PATH:/chromedriver"
 
 # install jvd package:
@@ -812,27 +804,28 @@ RUN apt-get install -y dbus-x11 \
   xfce4-panel \
   xfce4-session \
   xfce4-settings \
- # xfce4-power-manager \
- # xfce4-screensaver \
-  xorg 
+  xorg
 
 # AV - specifically remove and purge xfce4-screensaver to prevent screen locking.
 RUN apt-get remove -y -q --purge xfce4-screensaver
 
 # Remove light-locker to prevent screen lock
-RUN wget 'https://sourceforge.net/projects/turbovnc/files/3.1/turbovnc_3.1_amd64.deb/download' -O turbovnc_3.1_amd64.deb && \
-  apt-get install -y -q ./turbovnc_3.1_amd64.deb && \
+#RUN wget 'https://github.com/TurboVNC/turbovnc/releases/download/3.3beta1/turbovnc_3.2.90_amd64.deb' -O turbovnc_3.2.90_amd64.deb && \
+RUN wget 'https://github.com/TurboVNC/turbovnc/releases/download/3.3/turbovnc_3.3_amd64.deb' -O turbovnc_3.3_amd64.deb && \
+  apt-get install -y -q ./turbovnc_3.3_amd64.deb && \
   apt-get remove -y -q --purge light-locker && \
-  rm ./turbovnc_3.1_amd64.deb && \
-  ln -s /opt/TurboVNC/bin/* /usr/local/bin/
+  rm ./turbovnc_3.3_amd64.deb && \
+  ln -sf /opt/TurboVNC/bin/* /usr/local/bin/
 
+# Fix AV Apr 24 2026 - MIB with RTX6000Blackwell broke vnc, had to set this extension to get it working again.
+RUN echo '$serverArgs = "-extension GLX";' >> /etc/turbovncserver.conf
 
 # AV Sept 26 2024 - install full vscode
 USER root
 
 #https://update.code.visualstudio.com/1.93.1/linux-deb-arm64/stable
-
-RUN wget 'https://update.code.visualstudio.com/1.93.1/linux-deb-x64/stable' -O code.deb && \
+#RUN wget 'https://update.code.visualstudio.com/1.103.3/linux-deb-x64/stable' -O code.deb && \
+RUN wget 'https://update.code.visualstudio.com/latest/linux-deb-x64/stable' -O code.deb && \
     dpkg -i code.deb && \
     rm code.deb
 
@@ -852,12 +845,6 @@ USER root
 
 RUN apt-get -y install gtk2-engines-murrine gtk2-engines-pixbuf sassc optipng inkscape ibglib2.0-dev-bin libglib2.0-dev libxml2-utils
 
-#USER $NB_UID
-#RUN git clone https://github.com/vinceliuice/WhiteSur-gtk-theme && cd WhiteSur-gtk-theme && git checkout 422060b7db13fc3143146f62abb2c102039f06c3 && cd .. && \
-#  git clone https://github.com/vinceliuice/WhiteSur-icon-theme && \
-#  ./WhiteSur-gtk-theme/install.sh --nautilus-use-colors && \
-#  ./WhiteSur-icon-theme/install.sh   
-
 #USER root
 USER $NB_UID
 # torch:
@@ -865,7 +852,7 @@ RUN pip install --root-user-action ignore  torch_geometric \
  && fix-permissions "${CONDA_DIR}" \
  && fix-permissions "/home/${NB_USER}"
 
-RUN pip install --root-user-action ignore  pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.2.2+cu121.html \
+RUN pip install --root-user-action ignore  pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.6.0+cu126.html \
  && fix-permissions "${CONDA_DIR}" \
  && fix-permissions "/home/${NB_USER}"
 
@@ -875,6 +862,32 @@ RUN pip install pip jupyter-resource-usage \
 && fix-permissions "/home/${NB_USER}"
 
 USER root
+#muLab Requests July 9 2025
+RUN curl -fsSL https://ollama.com/install.sh | sh
+RUN apt-get install -y btop
+
+#miblab Ryan Zhou Requests Oct 2 2025
+RUN apt-get install -y npm
+RUN npm install -g @anthropic-ai/claude-code
+
+#miblab Ryan Zhou Requests Feb 5 2026
+USER $NB_UID
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+
+USER root
+RUN (type -p wget >/dev/null || (sudo apt update && sudo apt install wget -y)) \
+    && sudo mkdir -p -m 755 /etc/apt/keyrings \
+    && out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+    && cat $out | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
+    && sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && sudo mkdir -p -m 755 /etc/apt/sources.list.d \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+    && sudo apt update \
+    && sudo apt install gh -y
+
+# AV Feb 15 2026 - enable jupyter hub collaboration feature
+RUN mamba install -y -c conda-forge jupyter-collaboration && mamba clean -afy
+
 # other dev tools
 RUN apt-get install -y nvtop
 RUN apt-get install -y ncdu
@@ -882,7 +895,7 @@ RUN apt-get install  -y -q  libtool autoconf automake
 RUN apt-get install  -y -q  software-properties-common
 RUN add-apt-repository ppa:deadsnakes/ppa
 RUN add-apt-repository ppa:deadsnakes/ppa
-RUN apt-get install -y -q libpython3.11-dev
+RUN apt-get install -y -q libpython3.12-dev
 RUN add-apt-repository ppa:ubuntu-toolchain-r/test
 RUN apt-get update
 RUN apt-get -y -q install gcc-9
@@ -901,10 +914,6 @@ RUN fix-permissions /home/$NB_USER
 
 # Switch back to jovyan to avoid accidental container runs as root
 USER $NB_UID
-
-
-
-
 
 # Set env-var JUPYTER_TOKEN as static token
 ARG JUPYTER_TOKEN
