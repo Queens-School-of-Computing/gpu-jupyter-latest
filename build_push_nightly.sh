@@ -269,9 +269,9 @@ FAILED=false
 
 for DOCKERFILE in $DOCKERFILES; do
     DATE=$(basename "$DOCKERFILE" | grep -oE '[0-9]{8}')
-    CUDA=$(grep -oE 'nvidia/cuda:[0-9]+\.[0-9]+\.[0-9]+' "$DOCKERFILE" | head -1 | cut -d: -f2)
-    UBUNTU=$(grep -oE 'ubuntu[0-9]+\.[0-9]+' "$DOCKERFILE" | head -1 | grep -oE '[0-9]+\.[0-9]+')
-    TF=$(grep -oE 'tensorflow==[0-9]+\.[0-9]+\.[0-9]+' "$DOCKERFILE" | head -1 | cut -d= -f3)
+    CUDA=$(grep -v '^[[:space:]]*#' "$DOCKERFILE" | grep -oE 'nvidia/cuda:[0-9]+\.[0-9]+\.[0-9]+' | head -1 | cut -d: -f2)
+    UBUNTU=$(grep -v '^[[:space:]]*#' "$DOCKERFILE" | grep -oE 'ubuntu[0-9]+\.[0-9]+' | head -1 | grep -oE '[0-9]+\.[0-9]+')
+    TF=$(grep -v '^[[:space:]]*#' "$DOCKERFILE" | grep -oE 'tensorflow==[0-9]+\.[0-9]+\.[0-9]+' | head -1 | cut -d= -f3)
 
     if [ -z "$CUDA" ] || [ -z "$UBUNTU" ] || [ -z "$TF" ]; then
         log "❌ ERROR: Could not extract versions from $DOCKERFILE (CUDA=$CUDA UBUNTU=$UBUNTU TF=$TF)"
