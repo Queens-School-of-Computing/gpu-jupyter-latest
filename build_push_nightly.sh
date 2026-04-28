@@ -30,6 +30,7 @@ TO_EMAIL="aaron.visser@queensu.ca"
 
 LOG_FILE="/tmp/build_push_nightly_$$.log"
 BUILD_DATE=$(date '+%Y%m%d')
+CACHE_BUST=$(date '+%s')   # unique per run — always busts post-CACHE_BUST layers
 
 for arg in "$@"; do
     case $arg in
@@ -327,7 +328,7 @@ for DOCKERFILE in $DOCKERFILES; do
     log "=========================================="
 
     if [ "$DRY_RUN" = "true" ]; then
-        log "[dry-run] docker build --platform=linux/amd64 --build-arg CACHE_BUST=$BUILD_DATE -f $DOCKERFILE -t $FLOATING_TAG .build/"
+        log "[dry-run] docker build --platform=linux/amd64 --build-arg CACHE_BUST=$CACHE_BUST -f $DOCKERFILE -t $FLOATING_TAG .build/"
         log "[dry-run] docker tag $FLOATING_TAG $DATED_TAG"
         log "[dry-run] docker push $FLOATING_TAG"
         log "[dry-run] docker push $DATED_TAG"
@@ -341,7 +342,7 @@ for DOCKERFILE in $DOCKERFILES; do
         BUILT_TAGS+=("$FLOATING_TAG" "$DATED_TAG")
         [ -n "$LOCAL_REGISTRY" ] && BUILT_TAGS+=("$LOCAL_FLOATING_TAG" "$LOCAL_DATED_TAG")
     else
-        if docker build --platform=linux/amd64 --build-arg CACHE_BUST="$BUILD_DATE" -f "$DOCKERFILE" -t "$FLOATING_TAG" .build/ 2>&1 | tee -a "$LOG_FILE"; then
+        if docker build --platform=linux/amd64 --build-arg CACHE_BUST="$CACHE_BUST" -f "$DOCKERFILE" -t "$FLOATING_TAG" .build/ 2>&1 | tee -a "$LOG_FILE"; then
             docker tag "$FLOATING_TAG" "$DATED_TAG"
             PUSH_OK=true
             push_with_retry "$FLOATING_TAG" || PUSH_OK=false
