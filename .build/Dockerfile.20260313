@@ -754,7 +754,8 @@ RUN wget -q 'https://github.com/TurboVNC/turbovnc/releases/download/3.3/turbovnc
 RUN echo '$serverArgs = "-extension GLX";' >> /etc/turbovncserver.conf
 
 # PPAs + gcc-9 / libpython3.12-dev
-RUN apt-get install -y --no-install-recommends software-properties-common \
+RUN apt-get update --yes \
+    && apt-get install -y --no-install-recommends software-properties-common \
     && add-apt-repository -y ppa:deadsnakes/ppa \
     && add-apt-repository -y ppa:ubuntu-toolchain-r/test \
     && apt-get update \

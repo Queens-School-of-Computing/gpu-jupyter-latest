@@ -15,8 +15,8 @@ SMTP_PORT=25
 SMTP_USE_TLS=false
 SMTP_USERNAME=""
 SMTP_PASSWORD=""
-FROM_EMAIL="lobot@cs.queensu.ca"
-TO_EMAIL="aaron.visser@queensu.ca,whb1@queensu.ca"
+FROM_EMAIL="lobot-nightlybuild@cs.queensu.ca"
+TO_EMAIL="aaron.visser@queensu.ca"
 
 LOG_FILE="/tmp/build_push_nightly_$$.log"
 BUILD_DATE=$(date '+%Y%m%d')
