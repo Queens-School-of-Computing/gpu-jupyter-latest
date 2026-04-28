@@ -1,5 +1,5 @@
 # Nightly Build — build_push_nightly.sh
-
+![Lobot Nightly build](https://raw.githubusercontent.com/Queens-School-of-Computing/Lobot/main/assets/images/nightlybuildbanner.png)
 ## Overview
 
 `build_push_nightly.sh` builds, tags, and pushes nightly Docker images for the
