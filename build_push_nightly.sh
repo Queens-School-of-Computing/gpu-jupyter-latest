@@ -6,6 +6,8 @@ REPO="queensschoolofcomputingdocker/gpu-jupyter-latest"
 DOCKERHUB_USERNAME="queensschoolofcomputingdocker"
 # DOCKERHUB_PASSWORD must be set in the environment (export DOCKERHUB_PASSWORD=...)
 KEEP_NIGHTLY_COUNT=2   # dated history tags to keep per version (floating tag is additional)
+PUSH_RETRIES=3         # number of push attempts before giving up
+PUSH_RETRY_DELAY=30    # seconds to wait between push retries
 
 DRY_RUN=false
 EMAIL_ENABLED=true
@@ -33,6 +35,23 @@ done
 
 log() {
     echo "$*" | tee -a "$LOG_FILE"
+}
+
+push_with_retry() {
+    local tag="$1"
+    local attempt=1
+    while [ $attempt -le $PUSH_RETRIES ]; do
+        if docker push "$tag" 2>&1 | tee -a "$LOG_FILE"; then
+            return 0
+        fi
+        if [ $attempt -lt $PUSH_RETRIES ]; then
+            log "⚠️  Push attempt $attempt/$PUSH_RETRIES failed for $tag — retrying in ${PUSH_RETRY_DELAY}s..."
+            sleep "$PUSH_RETRY_DELAY"
+        fi
+        attempt=$((attempt + 1))
+    done
+    log "❌ Push failed after $PUSH_RETRIES attempts: $tag"
+    return 1
 }
 
 # ── DockerHub tag pruning ─────────────────────────────────────────────────────
@@ -283,8 +302,8 @@ for DOCKERFILE in $DOCKERFILES; do
         if docker build --platform=linux/amd64 -f "$DOCKERFILE" -t "$FLOATING_TAG" .build/ 2>&1 | tee -a "$LOG_FILE"; then
             docker tag "$FLOATING_TAG" "$DATED_TAG"
             PUSH_OK=true
-            docker push "$FLOATING_TAG" 2>&1 | tee -a "$LOG_FILE" || PUSH_OK=false
-            docker push "$DATED_TAG"    2>&1 | tee -a "$LOG_FILE" || PUSH_OK=false
+            push_with_retry "$FLOATING_TAG" || PUSH_OK=false
+            push_with_retry "$DATED_TAG"    || PUSH_OK=false
 
             if [ "$PUSH_OK" = "true" ]; then
                 log "✅ Done: $FLOATING_TAG"

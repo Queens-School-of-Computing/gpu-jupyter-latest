@@ -761,7 +761,8 @@ RUN apt-get update --yes \
     && apt-get update \
     && apt-get install -y --no-install-recommends libpython3.12-dev gcc-9 \
     && apt-get autoremove -y \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+    && apt-get clean && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /home/${NB_USER}/.launchpadlib
 
 # GitHub CLI
 RUN mkdir -p -m 755 /etc/apt/keyrings /etc/apt/sources.list.d \
@@ -841,8 +842,7 @@ RUN pip install --root-user-action ignore --no-cache-dir selenium PyVirtualDispl
 USER root
 RUN wget -q 'https://update.code.visualstudio.com/latest/linux-deb-x64/stable' -O /tmp/code.deb \
     && dpkg -i /tmp/code.deb \
-    && rm /tmp/code.deb \
-    && chown -R $NB_UID:$NB_GID $HOME
+    && rm /tmp/code.deb
 
 # code-server + Python extension
 RUN curl -fsSL https://code-server.dev/install.sh | sh \
@@ -853,6 +853,9 @@ RUN curl -fsSL https://ollama.com/install.sh | sh
 
 # Claude Code
 RUN npm install -g @anthropic-ai/claude-code
+
+# Fix $HOME ownership after all root installs that may touch it
+RUN chown -R $NB_UID:$NB_GID $HOME
 
 # uv
 USER $NB_UID
