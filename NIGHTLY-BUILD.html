@@ -1,0 +1,280 @@
+<img src="https://raw.githubusercontent.com/Queens-School-of-Computing/Lobot/main/assets/images/nightlybuildbanner.png" alt="Lobot Nightly Build" style="width:100%;max-width:1536px;" />
+<h2>Overview</h2>
+<p><code>build_push_nightly.sh</code> builds, tags, and pushes nightly Docker images for the QSC JupyterHub cluster. It discovers all dated Dockerfiles in <code>.build/</code>, extracts version strings automatically, pushes two tags per build (a floating tag and a dated tag), prunes old dated tags from DockerHub, and emails a full build report.</p>
+<p>Designed to run on a dedicated build server with Docker and internet access. The build server does not need <code>kubectl</code> or cluster access — it only pushes to DockerHub. Cluster node pulls are handled separately by <code>image-pull.sh</code>.</p>
+<hr />
+<h2>Prerequisites</h2>
+<ul>
+<li>Docker (with <code>docker buildx</code> support for <code>--platform=linux/amd64</code>)</li>
+<li>Python 3 (used for DockerHub tag pruning and email notifications)</li>
+<li>Internet access to DockerHub (<code>registry-1.docker.io</code>)</li>
+<li><code>DOCKERHUB_PASSWORD</code> set in the environment (see <a href="#credentials">Credentials</a>)</li>
+</ul>
+<hr />
+<h2>Configuration</h2>
+<p>All tunable settings are at the top of the script:</p>
+<pre><code>REPO="queensschoolofcomputingdocker/gpu-jupyter-latest"
+DOCKERHUB_USERNAME="queensschoolofcomputingdocker"
+KEEP_NIGHTLY_COUNT=2   # dated history tags to keep per version (floating tag is additional)
+PUSH_RETRIES=3         # number of push attempts before giving up
+PUSH_RETRY_DELAY=30    # seconds to wait between push retries</code></pre>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>REPO</code></td>
+<td>DockerHub repository path</td>
+</tr>
+<tr>
+<td><code>DOCKERHUB_USERNAME</code></td>
+<td>DockerHub account name (used for API authentication)</td>
+</tr>
+<tr>
+<td><code>KEEP_NIGHTLY_COUNT</code></td>
+<td>Number of dated history tags to keep per Dockerfile version. The floating tag is never pruned and is additional to this count. Changing to <code>7</code> retains a full week.</td>
+</tr>
+<tr>
+<td><code>PUSH_RETRIES</code></td>
+<td>How many times to retry a failed push before marking it as failed</td>
+</tr>
+<tr>
+<td><code>PUSH_RETRY_DELAY</code></td>
+<td>Seconds between push retry attempts</td>
+</tr>
+</tbody>
+</table>
+<h3 id="credentials">Credentials</h3>
+<p><code>DOCKERHUB_PASSWORD</code> must be set in the environment before running. Never hardcode it in the script:</p>
+<pre><code>export DOCKERHUB_PASSWORD=your_token_here
+./build_push_nightly.sh</code></pre>
+<p>A DockerHub <strong>access token</strong> (not account password) is recommended. Create one at hub.docker.com → Account Settings → Security → Access Tokens. The token needs Read/Write/Delete scope on the repository.</p>
+<hr />
+<h2>Dockerfile Discovery</h2>
+<p>The script scans <code>.build/</code> for files matching <code>Dockerfile.[0-9]{8}</code>:</p>
+<pre><code>.build/
+  Dockerfile.20260313   → CUDA 13.0.2, TF 2.20.0, Ubuntu 24.04
+  Dockerfile.20260424   → CUDA 13.2.1, TF 2.20.0, Ubuntu 24.04</code></pre>
+<p>Version strings are extracted automatically by grepping the active (non-commented) lines of each Dockerfile:</p>
+<table>
+<thead>
+<tr>
+<th>Version</th>
+<th>Source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CUDA</code></td>
+<td>First active <code>FROM nvidia/cuda:X.Y.Z</code> line</td>
+</tr>
+<tr>
+<td><code>Ubuntu</code></td>
+<td>First active <code>ubuntu24.04</code> (or similar) reference</td>
+</tr>
+<tr>
+<td><code>TensorFlow</code></td>
+<td>First active <code>tensorflow==X.Y.Z</code> in a pip install</td>
+</tr>
+</tbody>
+</table>
+<p>If any version cannot be extracted the Dockerfile is skipped with an error.</p>
+<hr />
+<h2>Tag Strategy</h2>
+<p>Each build produces <strong>two tags</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Tag</th>
+<th>Format</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Floating</td>
+<td><code>...-{DATE}-nightly</code></td>
+<td>Stable tag HTML pages link to. Updated each night to point to the latest build.</td>
+</tr>
+<tr>
+<td>Dated</td>
+<td><code>...-{DATE}-nightly-{BUILD_DATE}</code></td>
+<td>History/rollback tag. Identifies exactly which night's build it is.</td>
+</tr>
+</tbody>
+</table>
+<p>Example for a build on 2026-04-28 from <code>Dockerfile.20260313</code>:</p>
+<pre><code>queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly
+queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly-20260428</code></pre>
+<p>The floating tag is always what JupyterHub HTML pages reference — no HTML edits are needed after each nightly build. The dated tag provides a rollback target if a build introduces a regression.</p>
+<hr />
+<h2>DockerHub Tag Pruning</h2>
+<p>After each successful push, the script calls DockerHub's REST API to prune old dated tags for that Dockerfile version:</p>
+<ol>
+<li>Authenticates with DockerHub (JWT via <code>/v2/users/login</code>)</li>
+<li>Lists all tags for the repository</li>
+<li>Filters to dated tags matching <code>...-{DOCKERFILE_DATE}-nightly-YYYYMMDD</code> (floating tags are never touched)</li>
+<li>Sorts by build date, newest first</li>
+<li>Deletes any dated tags beyond <code>KEEP_NIGHTLY_COUNT</code></li>
+</ol>
+<p>After a week of nightly builds with <code>KEEP_NIGHTLY_COUNT=2</code>, DockerHub holds:</p>
+<pre><code>...-20260313-nightly              ← floating, always present
+...-20260313-nightly-20260428     ← yesterday
+...-20260313-nightly-20260427     ← day before</code></pre>
+<p>Pruning is skipped (with a warning) if <code>DOCKERHUB_PASSWORD</code> is not set.</p>
+<hr />
+<h2>Push Retry</h2>
+<p>Each <code>docker push</code> is wrapped in a retry loop. On a network timeout or proxy error, the script waits <code>PUSH_RETRY_DELAY</code> seconds and tries again, up to <code>PUSH_RETRIES</code> times. Each attempt is logged:</p>
+<pre><code>⚠️  Push attempt 1/3 failed for ...:...-nightly — retrying in 30s...</code></pre>
+<p>If all retries fail, the tag is marked as failed and the email reports failure.</p>
+<hr />
+<h2>Usage</h2>
+<pre><code>./build_push_nightly.sh [--dry-run] [--noemail]</code></pre>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--dry-run</code></td>
+<td>Print what would be built and pushed; no Docker or DockerHub operations</td>
+</tr>
+<tr>
+<td><code>--noemail</code></td>
+<td>Skip the email notification</td>
+</tr>
+</tbody>
+</table>
+<h3>Dry-run</h3>
+<pre><code>export DOCKERHUB_PASSWORD=...
+./build_push_nightly.sh --dry-run</code></pre>
+<p>Logs what each Dockerfile would produce without touching Docker or DockerHub:</p>
+<pre><code>[dry-run] docker build --platform=linux/amd64 -f .build/Dockerfile.20260313 -t ...nightly .build/
+[dry-run] docker tag ...nightly ...nightly-20260428
+[dry-run] docker push ...nightly
+[dry-run] docker push ...nightly-20260428
+[dry-run] prune dated tags: keep 2 for *-20260313-nightly-*</code></pre>
+<hr />
+<h2>Email Notifications</h2>
+<p>Configure the SMTP block at the top of the script:</p>
+<pre><code>SMTP_SERVER="innovate.cs.queensu.ca"
+SMTP_PORT=25
+SMTP_USE_TLS=false
+SMTP_USERNAME=""
+SMTP_PASSWORD=""
+FROM_EMAIL="lobot@cs.queensu.ca"
+TO_EMAIL="aaron.visser@queensu.ca,whb1@queensu.ca"</code></pre>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>EMAIL_ENABLED</code></td>
+<td>Set to <code>false</code> to disable all notifications</td>
+</tr>
+<tr>
+<td><code>SMTP_SERVER</code></td>
+<td>Hostname of the SMTP relay</td>
+</tr>
+<tr>
+<td><code>SMTP_PORT</code></td>
+<td>SMTP port (<code>25</code> = plain, <code>587</code> = submission+TLS)</td>
+</tr>
+<tr>
+<td><code>SMTP_USE_TLS</code></td>
+<td>Set to <code>true</code> to enable STARTTLS</td>
+</tr>
+<tr>
+<td><code>SMTP_USERNAME</code> / <code>SMTP_PASSWORD</code></td>
+<td>Leave empty for unauthenticated relay</td>
+</tr>
+<tr>
+<td><code>FROM_EMAIL</code></td>
+<td>Sender address</td>
+</tr>
+<tr>
+<td><code>TO_EMAIL</code></td>
+<td>Recipient(s), comma-separated</td>
+</tr>
+</tbody>
+</table>
+<p>Email is sent via Python 3 <code>smtplib</code>. The body is a dark-themed HTML page with a colour-coded status banner (green for success, red for failure), a list of all pushed tags, and the full build log.</p>
+<p>Subject line format:</p>
+<ul>
+<li><code>✅ Nightly build complete | YYYY-MM-DD | N image(s)</code></li>
+<li><code>❌ Nightly build FAILED | YYYY-MM-DD</code></li>
+</ul>
+<p>Pass <code>--noemail</code> to suppress the notification, useful for manual test runs or dry-runs where an email is not needed.</p>
+<hr />
+<h2>Log File</h2>
+<p>A temporary log file is written to <code>/tmp/build_push_nightly_$$.log</code> during the run and included as the email body. It is deleted after the email is sent. If the script is interrupted before sending, the log remains at that path.</p>
+<hr />
+<h2>Typical Workflow</h2>
+<h3>Manual run</h3>
+<pre><code>export DOCKERHUB_PASSWORD=&lt;access-token&gt;
+
+# Dry-run first to confirm tag names and version extraction
+./build_push_nightly.sh --dry-run --noemail
+
+# Full build and push
+./build_push_nightly.sh</code></pre>
+<h3>Automated (cron)</h3>
+<p>Add to crontab on the build server. Run at 02:00 nightly; credential is stored in the crontab environment:</p>
+<pre><code>0 2 * * * DOCKERHUB_PASSWORD=&lt;token&gt; /path/to/gpu-jupyter-latest/build_push_nightly.sh</code></pre>
+<p>Or use a credentials file sourced before running:</p>
+<pre><code>0 2 * * * . /etc/lobot/dockerhub-creds &amp;&amp; /path/to/gpu-jupyter-latest/build_push_nightly.sh</code></pre>
+<h3>After a nightly build: updating cluster nodes</h3>
+<p>After the build server pushes a new nightly, pull the new tags onto the target nodes and clean up old ones. Combine all tags from all Dockerfile versions into a single command and use <code>-e</code> to exclude every node that should <em>not</em> receive the update. Use lobot-tui actions <code>[1]</code> and <code>[2]</code> to build the commands interactively — the resulting command is logged and can be copied for future runs.</p>
+<pre><code># Pull — all tags for both versions; exclude all nodes except debwewin and duotronic
+./image-pull.sh \
+  -i queensschoolofcomputingdocker/gpu-jupyter-latest:13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424 \
+  -i queensschoolofcomputingdocker/gpu-jupyter-latest:13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424-nightly \
+  -i queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313 \
+  -i queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly \
+  -b 3 -t 1200 \
+  -e bootstrap,floppy,fz1,fz2,giza,kickstart,lobot-a16-1,makemake,netfusion,newtek,pluto,titan \
+  --yes
+
+# Cleanup — keep same tags; remove all others from debwewin and duotronic
+./image-cleanup.sh \
+  -i queensschoolofcomputingdocker/gpu-jupyter-latest:13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424 \
+  -i queensschoolofcomputingdocker/gpu-jupyter-latest:13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424-nightly \
+  -i queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313 \
+  -i queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly \
+  -e bootstrap,floppy,fz1,fz2,giza,kickstart,lobot-a16-1,makemake,netfusion,newtek,pluto,titan \
+  --yes</code></pre>
+<p>See <a href="https://github.com/Queens-School-of-Computing/Lobot-tools/blob/main/IMAGE-MANAGEMENT.md" target="_blank" rel="noopener">IMAGE-MANAGEMENT.md</a> for full pull and cleanup documentation.</p>
+<hr />
+<h2>Adding a New Dockerfile Version</h2>
+<ol>
+<li>Create <code>.build/Dockerfile.YYYYMMDD</code> with the new date (e.g. <code>Dockerfile.20260601</code>)</li>
+<li>Ensure the file has an active (non-commented) <code>FROM nvidia/cuda:X.Y.Z-...</code> line, a <code>tensorflow==X.Y.Z</code> reference, and an <code>ubuntu24.04</code> (or similar) reference</li>
+<li>Run <code>./build_push_nightly.sh --dry-run</code> to confirm version extraction</li>
+<li>The build script picks it up automatically on the next run — no code changes needed</li>
+</ol>
+<hr />
+<h2>Caveats</h2>
+<h3><code>CACHE_BUST</code> and layer caching</h3>
+<p>Each Dockerfile uses <code>ARG CACHE_BUST=1</code> to control which layers rebuild nightly. Layers before <code>ARG CACHE_BUST=1</code> are cached (they only rebuild when the Dockerfile content above that line changes). Layers after it rebuild every run.</p>
+<p>The nightly-rebuilt layers are: Chrome + ChromeDriver, VS Code, code-server, Ollama, Claude Code, and uv. Everything else (MATLAB, PyTorch, xfce4, etc.) is cached from the first build.</p>
+<p>Pass <code>--no-cache</code> to Docker to force a full rebuild:</p>
+<pre><code># Not done by the script — run manually if needed
+docker build --no-cache --platform=linux/amd64 \
+  -f .build/Dockerfile.20260313 \
+  -t queensschoolofcomputingdocker/gpu-jupyter-latest:... \
+  .build/</code></pre>
+<h3>Build server proxy</h3>
+<p>If the build server routes outbound traffic through a proxy, Docker may hit <code>i/o timeout</code> errors on push. The <code>PUSH_RETRIES</code> and <code>PUSH_RETRY_DELAY</code> settings handle transient timeouts automatically. If pushes fail consistently, check <code>HTTP_PROXY</code> / <code>HTTPS_PROXY</code> in the Docker daemon environment.</p>
+<h3>Platform mismatch</h3>
+<p>All builds use <code>--platform=linux/amd64</code> explicitly. If the build server is ARM (e.g. Apple Silicon), ensure <code>docker buildx</code> with <code>linux/amd64</code> emulation is available via QEMU. Builds will be slow under emulation — use a native x86_64 machine for production nightly builds.</p>
