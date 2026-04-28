@@ -9,6 +9,14 @@ KEEP_NIGHTLY_COUNT=2   # dated history tags to keep per version (floating tag is
 PUSH_RETRIES=3         # number of push attempts before giving up
 PUSH_RETRY_DELAY=30    # seconds to wait between push retries
 
+# Local registry (optional). Set to host:port to push there after DockerHub.
+# Leave empty to skip. Example: LOCAL_REGISTRY="130.15.1.150:5050"
+#LOCAL_REGISTRY="130.15.1.150:5050"
+LOCAL_REGISTRY=""
+LOCAL_REGISTRY_USERNAME="admin"
+# LOCAL_REGISTRY_PASSWORD must be set in the environment (export LOCAL_REGISTRY_PASSWORD=...)
+LOCAL_REGISTRY_PASSWORD="${LOCAL_REGISTRY_PASSWORD:-}"
+
 DRY_RUN=false
 EMAIL_ENABLED=true
 
@@ -257,6 +265,21 @@ if [ "$DRY_RUN" = "true" ]; then
     log "=== DRY RUN — no builds or pushes will happen ==="
 fi
 
+# Log in to local registry if configured
+if [ -n "$LOCAL_REGISTRY" ] && [ "$DRY_RUN" != "true" ]; then
+    if [ -z "$LOCAL_REGISTRY_PASSWORD" ]; then
+        log "⚠️  LOCAL_REGISTRY_PASSWORD not set — local registry push will likely fail"
+    else
+        log "--- Logging in to local registry: $LOCAL_REGISTRY ---"
+        if echo "$LOCAL_REGISTRY_PASSWORD" | docker login "$LOCAL_REGISTRY" \
+                --username "$LOCAL_REGISTRY_USERNAME" --password-stdin 2>&1 | tee -a "$LOG_FILE"; then
+            log "✅ Local registry login successful"
+        else
+            log "⚠️  Local registry login failed — local pushes may fail"
+        fi
+    fi
+fi
+
 DOCKERFILES=$(find .build -maxdepth 1 -name 'Dockerfile.[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]' | sort)
 
 if [ -z "$DOCKERFILES" ]; then
@@ -279,8 +302,16 @@ for DOCKERFILE in $DOCKERFILES; do
         continue
     fi
 
-    FLOATING_TAG="${REPO}:${CUDA}cudnn-${TF}tf-matlab-ollama-claude-qsc-u${UBUNTU}-${DATE}-nightly"
+    IMAGE_SUFFIX="${CUDA}cudnn-${TF}tf-matlab-ollama-claude-qsc-u${UBUNTU}-${DATE}-nightly"
+    FLOATING_TAG="${REPO}:${IMAGE_SUFFIX}"
     DATED_TAG="${FLOATING_TAG}-${BUILD_DATE}"
+
+    LOCAL_FLOATING_TAG=""
+    LOCAL_DATED_TAG=""
+    if [ -n "$LOCAL_REGISTRY" ]; then
+        LOCAL_FLOATING_TAG="${LOCAL_REGISTRY}/gpu-jupyter-latest:${IMAGE_SUFFIX}"
+        LOCAL_DATED_TAG="${LOCAL_FLOATING_TAG}-${BUILD_DATE}"
+    fi
 
     log "=========================================="
     log " Dockerfile:   $DOCKERFILE"
@@ -289,17 +320,28 @@ for DOCKERFILE in $DOCKERFILES; do
     log " TensorFlow:   $TF"
     log " Floating tag: $FLOATING_TAG"
     log " Dated tag:    $DATED_TAG"
+    if [ -n "$LOCAL_REGISTRY" ]; then
+        log " Local:        $LOCAL_FLOATING_TAG"
+        log " Local dated:  $LOCAL_DATED_TAG"
+    fi
     log "=========================================="
 
     if [ "$DRY_RUN" = "true" ]; then
-        log "[dry-run] docker build --platform=linux/amd64 -f $DOCKERFILE -t $FLOATING_TAG .build/"
+        log "[dry-run] docker build --platform=linux/amd64 --build-arg CACHE_BUST=$BUILD_DATE -f $DOCKERFILE -t $FLOATING_TAG .build/"
         log "[dry-run] docker tag $FLOATING_TAG $DATED_TAG"
         log "[dry-run] docker push $FLOATING_TAG"
         log "[dry-run] docker push $DATED_TAG"
         log "[dry-run] prune dated tags: keep $KEEP_NIGHTLY_COUNT for *-${DATE}-nightly-*"
+        if [ -n "$LOCAL_REGISTRY" ]; then
+            log "[dry-run] docker tag $FLOATING_TAG $LOCAL_FLOATING_TAG"
+            log "[dry-run] docker tag $FLOATING_TAG $LOCAL_DATED_TAG"
+            log "[dry-run] docker push $LOCAL_FLOATING_TAG"
+            log "[dry-run] docker push $LOCAL_DATED_TAG"
+        fi
         BUILT_TAGS+=("$FLOATING_TAG" "$DATED_TAG")
+        [ -n "$LOCAL_REGISTRY" ] && BUILT_TAGS+=("$LOCAL_FLOATING_TAG" "$LOCAL_DATED_TAG")
     else
-        if docker build --platform=linux/amd64 -f "$DOCKERFILE" -t "$FLOATING_TAG" .build/ 2>&1 | tee -a "$LOG_FILE"; then
+        if docker build --platform=linux/amd64 --build-arg CACHE_BUST="$BUILD_DATE" -f "$DOCKERFILE" -t "$FLOATING_TAG" .build/ 2>&1 | tee -a "$LOG_FILE"; then
             docker tag "$FLOATING_TAG" "$DATED_TAG"
             PUSH_OK=true
             push_with_retry "$FLOATING_TAG" || PUSH_OK=false
@@ -313,6 +355,23 @@ for DOCKERFILE in $DOCKERFILES; do
             else
                 log "❌ Push failed for $FLOATING_TAG / $DATED_TAG"
                 FAILED=true
+            fi
+
+            # Local registry push (independent of DockerHub result)
+            if [ -n "$LOCAL_REGISTRY" ]; then
+                log "--- Pushing to local registry: $LOCAL_REGISTRY ---"
+                docker tag "$FLOATING_TAG" "$LOCAL_FLOATING_TAG"
+                docker tag "$FLOATING_TAG" "$LOCAL_DATED_TAG"
+                LOCAL_PUSH_OK=true
+                push_with_retry "$LOCAL_FLOATING_TAG" || LOCAL_PUSH_OK=false
+                push_with_retry "$LOCAL_DATED_TAG"    || LOCAL_PUSH_OK=false
+                if [ "$LOCAL_PUSH_OK" = "true" ]; then
+                    log "✅ Local: $LOCAL_FLOATING_TAG"
+                    log "✅ Local: $LOCAL_DATED_TAG"
+                    BUILT_TAGS+=("$LOCAL_FLOATING_TAG" "$LOCAL_DATED_TAG")
+                else
+                    log "⚠️  Local registry push failed (non-fatal) for $LOCAL_FLOATING_TAG"
+                fi
             fi
         else
             log "❌ Build failed: $FLOATING_TAG"
