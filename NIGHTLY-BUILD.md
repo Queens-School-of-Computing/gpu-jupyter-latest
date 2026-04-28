@@ -248,22 +248,32 @@ Or use a credentials file sourced before running:
 
 ### After a nightly build: updating cluster nodes
 
-After the build server pushes a new nightly, pull the new tags onto cluster
-nodes and clean up old ones using `image-pull.sh` and `image-cleanup.sh` (or
-via lobot-tui actions `[1]` and `[2]`):
+After the build server pushes a new nightly, pull the new tags onto the target
+nodes and clean up old ones. Combine all tags from all Dockerfile versions into
+a single command and use `-e` to exclude every node that should *not* receive
+the update. Use lobot-tui actions `[1]` and `[2]` to build the commands
+interactively — the resulting command is logged and can be copied for future
+runs.
 
 ```bash
-# Pull the new nightly (floating + latest dated tag)
+# Pull — all tags for both versions; exclude all nodes except debwewin and duotronic
 ./image-pull.sh \
-  -i .../gpu-jupyter-latest:13.0.2cudnn-...-20260313-nightly \
-  -i .../gpu-jupyter-latest:13.0.2cudnn-...-20260313-nightly-20260428 \
-  -b 3
+  -i queensschoolofcomputingdocker/gpu-jupyter-latest:13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424 \
+  -i queensschoolofcomputingdocker/gpu-jupyter-latest:13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424-nightly \
+  -i queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313 \
+  -i queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly \
+  -b 3 -t 1200 \
+  -e bootstrap,floppy,fz1,fz2,giza,kickstart,lobot-a16-1,makemake,netfusion,newtek,pluto,titan \
+  --yes
 
-# Keep the 3 most recent tags; remove everything else
+# Cleanup — keep same tags; remove all others from debwewin and duotronic
 ./image-cleanup.sh \
-  -i .../gpu-jupyter-latest:13.0.2cudnn-...-20260313-nightly \
-  -i .../gpu-jupyter-latest:13.0.2cudnn-...-20260313-nightly-20260428 \
-  -i .../gpu-jupyter-latest:13.0.2cudnn-...-20260313-nightly-20260427
+  -i queensschoolofcomputingdocker/gpu-jupyter-latest:13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424 \
+  -i queensschoolofcomputingdocker/gpu-jupyter-latest:13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424-nightly \
+  -i queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313 \
+  -i queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly \
+  -e bootstrap,floppy,fz1,fz2,giza,kickstart,lobot-a16-1,makemake,netfusion,newtek,pluto,titan \
+  --yes
 ```
 
 See [IMAGE-MANAGEMENT.md](IMAGE-MANAGEMENT.md) for full pull and cleanup documentation.
