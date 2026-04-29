@@ -856,7 +856,7 @@ RUN npm install -g @anthropic-ai/claude-code
 
 
 # open code muLab Request Apr 28 2026
-curl -fsSL https://opencode.ai/install | bash
+RUN curl -fsSL https://opencode.ai/install | bash
 
 # Fix $HOME ownership after all root installs that may touch it
 RUN chown -R $NB_UID:$NB_GID $HOME
