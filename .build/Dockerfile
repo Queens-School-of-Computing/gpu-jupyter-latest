@@ -865,6 +865,10 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 RUN curl -fsSL https://opencode.ai/install | bash
 
 USER root
+RUN echo 'export PATH="$HOME/.opencode/bin:$PATH"' \
+    > /usr/local/bin/before-notebook.d/20opencode-path.sh \
+    && chmod +x /usr/local/bin/before-notebook.d/20opencode-path.sh
+
 RUN update-alternatives --install /usr/bin/x-www-browser x-www-browser /usr/bin/google-chrome 500 \
     && update-alternatives --set x-www-browser /usr/bin/google-chrome
 
