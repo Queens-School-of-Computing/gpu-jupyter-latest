@@ -861,13 +861,12 @@ RUN chown -R $NB_UID:$NB_GID $HOME
 USER $NB_UID
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# open code muLab Request Apr 28 2026, can't be root
-RUN curl -fsSL https://opencode.ai/install | bash
-
+# opencode — patch install script to use /usr/local/bin (OPENCODE_INSTALL_DIR env var is broken upstream)
 USER root
-RUN echo 'export PATH="$HOME/.opencode/bin:$PATH"' \
-    > /usr/local/bin/before-notebook.d/20opencode-path.sh \
-    && chmod +x /usr/local/bin/before-notebook.d/20opencode-path.sh
+RUN curl -fsSL https://opencode.ai/install > /tmp/install-opencode.sh \
+    && sed -i 's|INSTALL_DIR="$HOME/.opencode/bin"|INSTALL_DIR="/usr/local/bin"|' /tmp/install-opencode.sh \
+    && bash /tmp/install-opencode.sh \
+    && rm /tmp/install-opencode.sh
 
 
 RUN update-alternatives --install /usr/bin/x-www-browser x-www-browser /usr/bin/google-chrome 500 \
