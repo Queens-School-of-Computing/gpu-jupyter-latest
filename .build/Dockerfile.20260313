@@ -864,7 +864,7 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 # opencode — patch install script to use /usr/local/bin (OPENCODE_INSTALL_DIR env var is broken upstream)
 USER root
 RUN curl -fsSL https://opencode.ai/install > /tmp/install-opencode.sh \
-    && sed -i 's|INSTALL_DIR="$HOME/.opencode/bin"|INSTALL_DIR="/usr/local/bin"|' /tmp/install-opencode.sh \
+    && sed -i 's|INSTALL_DIR=$HOME/.opencode/bin|INSTALL_DIR=/usr/local/bin|' /tmp/install-opencode.sh \
     && bash /tmp/install-opencode.sh \
     && rm /tmp/install-opencode.sh
 

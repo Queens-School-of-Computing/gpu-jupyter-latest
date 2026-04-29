@@ -19,6 +19,8 @@ LOCAL_REGISTRY_PASSWORD="${LOCAL_REGISTRY_PASSWORD:-}"
 
 DRY_RUN=false
 EMAIL_ENABLED=true
+PUSH_DOCKERHUB=true
+PUSH_ONLY=false
 
 SMTP_SERVER="innovate.cs.queensu.ca"
 SMTP_PORT=25
@@ -36,6 +38,8 @@ for arg in "$@"; do
     case $arg in
         --dry-run) DRY_RUN=true ;;
         --noemail) EMAIL_ENABLED=false ;;
+        --no-dockerhub) PUSH_DOCKERHUB=false ;;
+        --push-only) PUSH_ONLY=true ;;
         *) echo "Unknown argument: $arg"; exit 1 ;;
     esac
 done
@@ -328,11 +332,19 @@ for DOCKERFILE in $DOCKERFILES; do
     log "=========================================="
 
     if [ "$DRY_RUN" = "true" ]; then
-        log "[dry-run] docker build --platform=linux/amd64 --build-arg CACHE_BUST=$CACHE_BUST -f $DOCKERFILE -t $FLOATING_TAG .build/"
+        if [ "$PUSH_ONLY" = "true" ]; then
+            log "[dry-run] skipping build (--push-only) — would use existing: $FLOATING_TAG"
+        else
+            log "[dry-run] docker build --platform=linux/amd64 --build-arg CACHE_BUST=$CACHE_BUST -f $DOCKERFILE -t $FLOATING_TAG .build/"
+        fi
         log "[dry-run] docker tag $FLOATING_TAG $DATED_TAG"
-        log "[dry-run] docker push $FLOATING_TAG"
-        log "[dry-run] docker push $DATED_TAG"
-        log "[dry-run] prune dated tags: keep $KEEP_NIGHTLY_COUNT for *-${DATE}-nightly-*"
+        if [ "$PUSH_DOCKERHUB" = "true" ]; then
+            log "[dry-run] docker push $FLOATING_TAG"
+            log "[dry-run] docker push $DATED_TAG"
+            log "[dry-run] prune dated tags: keep $KEEP_NIGHTLY_COUNT for *-${DATE}-nightly-*"
+        else
+            log "[dry-run] skipping DockerHub push (--no-dockerhub)"
+        fi
         if [ -n "$LOCAL_REGISTRY" ]; then
             log "[dry-run] docker tag $FLOATING_TAG $LOCAL_FLOATING_TAG"
             log "[dry-run] docker tag $FLOATING_TAG $LOCAL_DATED_TAG"
@@ -342,20 +354,42 @@ for DOCKERFILE in $DOCKERFILES; do
         BUILT_TAGS+=("$FLOATING_TAG" "$DATED_TAG")
         [ -n "$LOCAL_REGISTRY" ] && BUILT_TAGS+=("$LOCAL_FLOATING_TAG" "$LOCAL_DATED_TAG")
     else
-        if docker build --platform=linux/amd64 --build-arg CACHE_BUST="$CACHE_BUST" -f "$DOCKERFILE" -t "$FLOATING_TAG" .build/ 2>&1 | tee -a "$LOG_FILE"; then
-            docker tag "$FLOATING_TAG" "$DATED_TAG"
-            PUSH_OK=true
-            push_with_retry "$FLOATING_TAG" || PUSH_OK=false
-            push_with_retry "$DATED_TAG"    || PUSH_OK=false
-
-            if [ "$PUSH_OK" = "true" ]; then
-                log "✅ Done: $FLOATING_TAG"
-                log "✅ Done: $DATED_TAG"
-                BUILT_TAGS+=("$FLOATING_TAG" "$DATED_TAG")
-                prune_nightly_tags "$DATE" 2>&1 | tee -a "$LOG_FILE"
-            else
-                log "❌ Push failed for $FLOATING_TAG / $DATED_TAG"
+        if [ "$PUSH_ONLY" = "true" ]; then
+            log "⏭️  Skipping build (--push-only) — using existing local image: $FLOATING_TAG"
+            if ! docker image inspect "$FLOATING_TAG" > /dev/null 2>&1; then
+                log "❌ Image not found locally: $FLOATING_TAG"
                 FAILED=true
+                continue
+            fi
+            docker tag "$FLOATING_TAG" "$DATED_TAG"
+            BUILD_OK=true
+        elif docker build --platform=linux/amd64 --build-arg CACHE_BUST="$CACHE_BUST" -f "$DOCKERFILE" -t "$FLOATING_TAG" .build/ 2>&1 | tee -a "$LOG_FILE"; then
+            docker tag "$FLOATING_TAG" "$DATED_TAG"
+            BUILD_OK=true
+        else
+            log "❌ Build failed: $FLOATING_TAG"
+            FAILED=true
+            BUILD_OK=false
+        fi
+
+        if [ "${BUILD_OK:-false}" = "true" ]; then
+
+            if [ "$PUSH_DOCKERHUB" = "true" ]; then
+                PUSH_OK=true
+                push_with_retry "$FLOATING_TAG" || PUSH_OK=false
+                push_with_retry "$DATED_TAG"    || PUSH_OK=false
+
+                if [ "$PUSH_OK" = "true" ]; then
+                    log "✅ Done: $FLOATING_TAG"
+                    log "✅ Done: $DATED_TAG"
+                    BUILT_TAGS+=("$FLOATING_TAG" "$DATED_TAG")
+                    prune_nightly_tags "$DATE" 2>&1 | tee -a "$LOG_FILE"
+                else
+                    log "❌ Push failed for $FLOATING_TAG / $DATED_TAG"
+                    FAILED=true
+                fi
+            else
+                log "⏭️  Skipping DockerHub push (--no-dockerhub)"
             fi
 
             # Local registry push (independent of DockerHub result)
@@ -374,9 +408,6 @@ for DOCKERFILE in $DOCKERFILES; do
                     log "⚠️  Local registry push failed (non-fatal) for $LOCAL_FLOATING_TAG"
                 fi
             fi
-        else
-            log "❌ Build failed: $FLOATING_TAG"
-            FAILED=true
         fi
     fi
 
