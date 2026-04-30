@@ -5,7 +5,7 @@ cd "$(cd -P -- "$(dirname -- "$0")" && pwd -P)"
 REPO="queensschoolofcomputingdocker/gpu-jupyter-latest"
 DOCKERHUB_USERNAME="queensschoolofcomputingdocker"
 # DOCKERHUB_PASSWORD must be set in the environment (export DOCKERHUB_PASSWORD=...)
-KEEP_NIGHTLY_COUNT=2   # dated history tags to keep per version (floating tag is additional)
+KEEP_NIGHTLY_COUNT=3   # dated history tags to keep per version (floating tag is additional)
 PUSH_RETRIES=3         # number of push attempts before giving up
 PUSH_RETRY_DELAY=30    # seconds to wait between push retries
 
