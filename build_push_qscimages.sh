@@ -252,10 +252,17 @@ build_email_body() {
     done
 
     LOG_CONTENT=$(cat "$LOG_FILE" | \
+        grep -v "^[a-f0-9]\{12,64\}: " | \
+        grep -v "^#[0-9]\+ " | \
+        grep -v "^\s*---> " | \
+        grep -v "^Step [0-9]\+/[0-9]\+\s*:" | \
+        grep -v "^Removing intermediate container" | \
         sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g' | \
         sed 's/✅/<span style="color:#2e7d32">✅/g' | \
         sed 's/❌/<span style="color:#c62828">❌/g' | \
         sed 's/⚠️/<span style="color:#f57f17">⚠️/g' | \
+        sed 's/⏱/<span style="color:#9e9e9e">⏱/g' | \
+        sed 's/⏭️/<span style="color:#6a1e99">⏭️/g' | \
         sed 's/🗑/<span style="color:#9e9e9e">🗑/g' | \
         awk '{print $0"</span><br>"}')
 
