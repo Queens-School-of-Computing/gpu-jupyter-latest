@@ -868,6 +868,7 @@ RUN curl -fsSL https://opencode.ai/install > /tmp/install-opencode.sh \
     && bash /tmp/install-opencode.sh \
     && rm /tmp/install-opencode.sh
 
+
 RUN update-alternatives --install /usr/bin/x-www-browser x-www-browser /usr/bin/google-chrome 500 \
     && update-alternatives --set x-www-browser /usr/bin/google-chrome
 

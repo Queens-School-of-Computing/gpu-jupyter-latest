@@ -1,0 +1,317 @@
+<img src="https://raw.githubusercontent.com/Queens-School-of-Computing/Lobot/main/assets/images/nightlybuildbanner.png" alt="Lobot QSC Image Build" style="width:100%;max-width:1536px;" />
+<h2>Overview</h2>
+<p><code>build_push_qscimages.sh</code> builds, tags, and pushes Docker images for the QSC JupyterHub cluster. It handles two distinct build types per Dockerfile version:</p>
+<ul>
+<li><strong>Baseline build</strong> — built once per Dockerfile version. Produces a stable, fully-cached image without forced layer refreshes. Skipped automatically if the baseline tag already exists locally.</li>
+<li><strong>Nightly build</strong> — runs on a recurring schedule. Forces a refresh of frequently-updated layers (Chrome, VS Code, Ollama, Claude Code, etc.) via <code>CACHE_BUST</code>. Skipped if today's dated tag already exists locally.</li>
+</ul>
+<p>The script discovers all dated Dockerfiles in <code>.build/</code>, extracts version strings automatically, pushes tags to DockerHub (and optionally a local registry), prunes old dated nightly tags, and emails a full build report including per-step timing.</p>
+<p>Designed to run on a dedicated build server with Docker and internet access. The build server does not need <code>kubectl</code> or cluster access — it only pushes to DockerHub. Cluster node pulls are handled separately by <code>image-pull.sh</code>.</p>
+<hr />
+<h2>Prerequisites</h2>
+<ul>
+<li>Docker Engine (with <code>docker buildx</code> support for <code>--platform=linux/amd64</code>)</li>
+<li>Python 3 (used for DockerHub tag pruning and email notifications)</li>
+<li><code>tmux</code> (recommended — keeps the build alive if SSH disconnects)</li>
+<li>Internet access to DockerHub (<code>registry-1.docker.io</code>)</li>
+<li><code>DOCKERHUB_PASSWORD</code> set in the environment (see <a href="#credentials">Credentials</a>)</li>
+</ul>
+<hr />
+<h2>Build Server Setup (Ubuntu 26.04)</h2>
+<p>The following steps configure a fresh Ubuntu 26.04 x86_64 host. Run all commands as <code>root</code>.</p>
+<h3>1. Install Docker Engine</h3>
+<pre><code>apt update
+apt install -y ca-certificates curl
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+chmod a+r /etc/apt/keyrings/docker.asc
+
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
+  https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release &amp;&amp; echo "$VERSION_CODENAME") stable" \
+  &gt; /etc/apt/sources.list.d/docker.list
+
+apt update
+apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin</code></pre>
+<h3>2. Verify Docker</h3>
+<pre><code>docker run --rm hello-world</code></pre>
+<h3>3. Install tmux</h3>
+<pre><code>apt install -y tmux</code></pre>
+<h3>4. Clone the repository</h3>
+<pre><code>mkdir -p /root/GitHub
+cd /root/GitHub
+git clone https://github.com/Queens-School-of-Computing/gpu-jupyter-latest.git
+cd gpu-jupyter-latest</code></pre>
+<h3>5. Log in to DockerHub</h3>
+<pre><code>docker login -u queensschoolofcomputingdocker
+# enter your PAT when prompted</code></pre>
+<h3>6. Set credentials</h3>
+<p>Use a DockerHub Personal Access Token (PAT). PATs contain only alphanumeric characters and underscores — no shell quoting issues:</p>
+<pre><code>export DOCKERHUB_PASSWORD='dckr_pat_your_token_here'</code></pre>
+<p>Persist across sessions by adding to <code>/root/.bashrc</code>:</p>
+<pre><code>echo "export DOCKERHUB_PASSWORD='dckr_pat_your_token_here'" &gt;&gt; /root/.bashrc</code></pre>
+<h3>7. Verify disk space</h3>
+<p>Each image is 30+ GB. With build cache, allow <strong>200+ GB</strong> free:</p>
+<pre><code>df -h /</code></pre>
+<h3>8. First run (in tmux)</h3>
+<pre><code>tmux new -s build
+cd /root/GitHub/gpu-jupyter-latest
+
+# Dry-run first to confirm tag names and version extraction
+./build_push_qscimages.sh --dry-run --noemail
+
+# Full build: builds baseline (if missing) then nightly
+./build_push_qscimages.sh</code></pre>
+<p>Detach with <code>Ctrl+B, D</code>. Reattach later with:</p>
+<pre><code>tmux attach -t build</code></pre>
+<hr />
+<h2>Configuration</h2>
+<p>All tunable settings are at the top of the script:</p>
+<pre><code>REPO="queensschoolofcomputingdocker/gpu-jupyter-latest"
+DOCKERHUB_USERNAME="queensschoolofcomputingdocker"
+KEEP_NIGHTLY_COUNT=2   # dated history tags to keep per version (floating tag is additional)
+PUSH_RETRIES=3         # number of push attempts before giving up
+PUSH_RETRY_DELAY=30    # seconds to wait between push retries
+
+# Local registry (optional) — leave empty to skip
+LOCAL_REGISTRY=""
+LOCAL_REGISTRY_USERNAME="admin"</code></pre>
+<table>
+<thead>
+<tr><th>Variable</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>REPO</code></td><td>DockerHub repository path</td></tr>
+<tr><td><code>DOCKERHUB_USERNAME</code></td><td>DockerHub account name (used for API authentication)</td></tr>
+<tr><td><code>KEEP_NIGHTLY_COUNT</code></td><td>Number of dated history tags to keep per Dockerfile version. The floating tag is never pruned and is additional to this count. Changing to <code>7</code> retains a full week.</td></tr>
+<tr><td><code>PUSH_RETRIES</code></td><td>How many times to retry a failed push before marking it as failed</td></tr>
+<tr><td><code>PUSH_RETRY_DELAY</code></td><td>Seconds between push retry attempts</td></tr>
+<tr><td><code>LOCAL_REGISTRY</code></td><td>Optional local registry (<code>host:port</code>). Leave empty to skip local pushes.</td></tr>
+<tr><td><code>LOCAL_REGISTRY_USERNAME</code></td><td>Username for the local registry</td></tr>
+</tbody>
+</table>
+<h3>Local Registry</h3>
+<p>To push to a local Docker registry in addition to DockerHub, set <code>LOCAL_REGISTRY</code> in the script and export <code>LOCAL_REGISTRY_PASSWORD</code> before running:</p>
+<pre><code>LOCAL_REGISTRY="distribution.cs.queensu.ca:5000"
+LOCAL_REGISTRY_USERNAME="admin"</code></pre>
+<pre><code>export LOCAL_REGISTRY_PASSWORD='your_registry_password'
+./build_push_qscimages.sh</code></pre>
+<p>Leave <code>LOCAL_REGISTRY=""</code> (the default) to disable local pushes entirely.</p>
+<h3 id="credentials">Credentials</h3>
+<p><code>DOCKERHUB_PASSWORD</code> must be set in the environment before running. Never hardcode it in the script:</p>
+<pre><code>export DOCKERHUB_PASSWORD='dckr_pat_your_token_here'
+./build_push_qscimages.sh</code></pre>
+<p>A DockerHub <strong>Personal Access Token (PAT)</strong> is strongly recommended over your account password. Create one at hub.docker.com → Account Settings → Security → Access Tokens. The token needs Read/Write/Delete scope on the repository.</p>
+<p>PATs have the format <code>dckr_pat_xxxx</code> and contain only alphanumeric characters and underscores, so they never need special shell quoting.</p>
+<hr />
+<h2>Dockerfile Discovery</h2>
+<p>The script scans <code>.build/</code> for files matching <code>Dockerfile.[0-9]{8}</code>:</p>
+<pre><code>.build/
+  Dockerfile.20260313   → CUDA 13.0.2, TF 2.20.0, Ubuntu 24.04
+  Dockerfile.20260424   → CUDA 13.2.1, TF 2.20.0, Ubuntu 24.04</code></pre>
+<p>Version strings are extracted automatically by grepping the active (non-commented) lines of each Dockerfile:</p>
+<table>
+<thead>
+<tr><th>Version</th><th>Source</th></tr>
+</thead>
+<tbody>
+<tr><td><code>CUDA</code></td><td>First active <code>FROM nvidia/cuda:X.Y.Z</code> line</td></tr>
+<tr><td><code>Ubuntu</code></td><td>First active <code>ubuntu24.04</code> (or similar) reference</td></tr>
+<tr><td><code>TensorFlow</code></td><td>First active <code>tensorflow==X.Y.Z</code> in a pip install</td></tr>
+</tbody>
+</table>
+<p>If any version cannot be extracted the Dockerfile is skipped with an error.</p>
+<hr />
+<h2>Tag Strategy</h2>
+<p>Each Dockerfile version produces <strong>three tags</strong>:</p>
+<table>
+<thead>
+<tr><th>Tag</th><th>Format</th><th>Purpose</th></tr>
+</thead>
+<tbody>
+<tr><td>Baseline</td><td><code>...-{DATE}</code></td><td>One-time stable build. Never rebuilt unless <code>--force-baseline</code>.</td></tr>
+<tr><td>Floating</td><td><code>...-{DATE}-nightly</code></td><td>Updated each night to the latest nightly build. HTML pages link to this tag.</td></tr>
+<tr><td>Dated</td><td><code>...-{DATE}-nightly-{BUILD_DATE}</code></td><td>History/rollback tag. Identifies exactly which night's build it is.</td></tr>
+</tbody>
+</table>
+<p>Example from <code>Dockerfile.20260313</code>, built on 2026-04-30:</p>
+<pre><code>queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313
+queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly
+queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly-20260430</code></pre>
+<p>The baseline tag is the stable reference pulled to cluster nodes for initial setup. The floating tag is what JupyterHub HTML pages reference — no HTML edits are needed after each nightly build. The dated tag provides a rollback target if a build introduces a regression.</p>
+<hr />
+<h2>DockerHub Tag Pruning</h2>
+<p>After each successful nightly push, the script calls DockerHub's REST API to prune old dated tags for that Dockerfile version:</p>
+<ol>
+<li>Authenticates with DockerHub (JWT via <code>/v2/users/login</code>)</li>
+<li>Lists all tags for the repository</li>
+<li>Filters to dated tags matching <code>...-{DOCKERFILE_DATE}-nightly-YYYYMMDD</code> (baseline and floating tags are never touched)</li>
+<li>Sorts by build date, newest first</li>
+<li>Deletes any dated tags beyond <code>KEEP_NIGHTLY_COUNT</code></li>
+</ol>
+<p>After a week of nightly builds with <code>KEEP_NIGHTLY_COUNT=2</code>, DockerHub holds:</p>
+<pre><code>...-20260313                      ← baseline, always present
+...-20260313-nightly              ← floating, always present
+...-20260313-nightly-20260430     ← yesterday
+...-20260313-nightly-20260429     ← day before</code></pre>
+<p>Pruning is skipped (with a warning) if <code>DOCKERHUB_PASSWORD</code> is not set.</p>
+<hr />
+<h2>Push Retry</h2>
+<p>Each <code>docker push</code> is wrapped in a retry loop. On a network timeout or proxy error, the script waits <code>PUSH_RETRY_DELAY</code> seconds and tries again, up to <code>PUSH_RETRIES</code> times. Each attempt is logged:</p>
+<pre><code>⚠️  Push attempt 1/3 failed for ...:...-nightly — retrying in 30s...</code></pre>
+<p>If all retries fail, the tag is marked as failed and the email reports failure.</p>
+<hr />
+<h2>Usage</h2>
+<pre><code>./build_push_qscimages.sh [--dry-run] [--noemail] [--no-dockerhub] [--push-only] [--baseline-only] [--nightly-only] [--force] [--force-baseline]</code></pre>
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--dry-run</code></td><td>Print what would be built and pushed; no Docker or DockerHub operations</td></tr>
+<tr><td><code>--noemail</code></td><td>Skip the email notification</td></tr>
+<tr><td><code>--no-dockerhub</code></td><td>Skip DockerHub push (useful when pushing to local registry only)</td></tr>
+<tr><td><code>--push-only</code></td><td>Skip all builds; push whatever local images already exist</td></tr>
+<tr><td><code>--baseline-only</code></td><td>Build and push baseline only; skip nightly</td></tr>
+<tr><td><code>--nightly-only</code></td><td>Skip baseline check entirely; build and push nightly only</td></tr>
+<tr><td><code>--force</code></td><td>Rebuild nightly even if today's dated tag already exists locally</td></tr>
+<tr><td><code>--force-baseline</code></td><td>Rebuild baseline even if it already exists locally</td></tr>
+</tbody>
+</table>
+<p><code>--baseline-only</code> and <code>--nightly-only</code> are mutually exclusive.</p>
+<h3>Dry-run</h3>
+<pre><code>export DOCKERHUB_PASSWORD='dckr_pat_your_token_here'
+./build_push_qscimages.sh --dry-run</code></pre>
+<p>Logs what each Dockerfile would produce without touching Docker or DockerHub:</p>
+<pre><code>[dry-run] docker build --platform=linux/amd64 -f .build/Dockerfile.20260313 -t ...20260313 .build/
+[dry-run] docker push ...20260313
+[dry-run] docker build --platform=linux/amd64 --build-arg CACHE_BUST=... -f .build/Dockerfile.20260313 -t ...nightly .build/
+[dry-run] docker tag ...nightly ...nightly-20260430
+[dry-run] docker push ...nightly
+[dry-run] docker push ...nightly-20260430
+[dry-run] prune dated tags: keep 2 for *-20260313-nightly-*</code></pre>
+<h3>Baseline Build</h3>
+<p>The baseline is built automatically on the first run for each Dockerfile version. On subsequent runs it is skipped:</p>
+<pre><code>⏭️  Baseline already exists — skipping (use --force-baseline to rebuild): ...20260313</code></pre>
+<p>To build only the baseline (e.g. when adding a new Dockerfile version):</p>
+<pre><code>./build_push_qscimages.sh --baseline-only</code></pre>
+<p>To force a full baseline rebuild:</p>
+<pre><code>./build_push_qscimages.sh --baseline-only --force-baseline</code></pre>
+<h3>Nightly Skip</h3>
+<p>If today's dated nightly tag already exists locally the nightly build is skipped and the script proceeds directly to the push phase. This handles the case where a previous run built successfully but failed to push:</p>
+<pre><code>⏭️  Today's nightly already exists — skipping (use --force to rebuild): ...-nightly-20260430</code></pre>
+<p>Use <code>--force</code> to rebuild regardless:</p>
+<pre><code>./build_push_qscimages.sh --force</code></pre>
+<h3>Timing</h3>
+<p>The script logs elapsed time for each phase:</p>
+<pre><code>⏱  Baseline build time: 3h 12m 44s
+⏱  DockerHub push (baseline): 22m 10s
+⏱  Nightly build time: 1h 42m 15s
+⏱  DockerHub push (floating): 18m 4s
+⏱  DockerHub push (dated):    17m 51s
+⏱  Total time: 5h 52m 4s</code></pre>
+<p>Timing is included in the email body.</p>
+<hr />
+<h2>Email Notifications</h2>
+<p>Configure the SMTP block at the top of the script:</p>
+<pre><code>SMTP_SERVER="innovate.cs.queensu.ca"
+SMTP_PORT=25
+SMTP_USE_TLS=false
+SMTP_USERNAME=""
+SMTP_PASSWORD=""
+FROM_EMAIL="lobot-nightlybuild@cs.queensu.ca"
+TO_EMAIL="aaron.visser@queensu.ca"</code></pre>
+<table>
+<thead>
+<tr><th>Variable</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>EMAIL_ENABLED</code></td><td>Set to <code>false</code> to disable all notifications</td></tr>
+<tr><td><code>SMTP_SERVER</code></td><td>Hostname of the SMTP relay</td></tr>
+<tr><td><code>SMTP_PORT</code></td><td>SMTP port (<code>25</code> = plain, <code>587</code> = submission+TLS)</td></tr>
+<tr><td><code>SMTP_USE_TLS</code></td><td>Set to <code>true</code> to enable STARTTLS</td></tr>
+<tr><td><code>SMTP_USERNAME</code> / <code>SMTP_PASSWORD</code></td><td>Leave empty for unauthenticated relay</td></tr>
+<tr><td><code>FROM_EMAIL</code></td><td>Sender address</td></tr>
+<tr><td><code>TO_EMAIL</code></td><td>Recipient(s), comma-separated</td></tr>
+</tbody>
+</table>
+<p>Email is sent via Python 3 <code>smtplib</code>. The body is a dark-themed HTML page with a colour-coded status banner (green for success, red for failure), a list of all pushed tags, and the full build log.</p>
+<p>Subject line format:</p>
+<ul>
+<li><code>✅ QSC image build complete | YYYY-MM-DD | N tag(s)</code></li>
+<li><code>❌ QSC image build FAILED | YYYY-MM-DD</code></li>
+</ul>
+<p>Pass <code>--noemail</code> to suppress the notification, useful for manual test runs or dry-runs where an email is not needed.</p>
+<hr />
+<h2>Log File</h2>
+<p>A temporary log file is written to <code>/tmp/build_push_qscimages_$$.log</code> during the run and included as the email body. It is deleted after the email is sent. If the script is interrupted before sending, the log remains at that path.</p>
+<hr />
+<h2>Typical Workflow</h2>
+<h3>Adding a new Dockerfile version (one-time)</h3>
+<pre><code>export DOCKERHUB_PASSWORD='dckr_pat_your_token_here'
+
+# Dry-run to confirm version extraction and tag names
+./build_push_qscimages.sh --baseline-only --dry-run --noemail
+
+# Build and push the baseline (run inside tmux — takes 3+ hours first time)
+./build_push_qscimages.sh --baseline-only</code></pre>
+<h3>Manual nightly run</h3>
+<pre><code>export DOCKERHUB_PASSWORD='dckr_pat_your_token_here'
+
+# Dry-run first
+./build_push_qscimages.sh --nightly-only --dry-run --noemail
+
+# Full nightly build and push (run inside tmux)
+./build_push_qscimages.sh --nightly-only</code></pre>
+<h3>Automated (cron)</h3>
+<p>Add to crontab on the build server. Run at 02:00 nightly. Use <code>--nightly-only</code> so the cron job never accidentally triggers a baseline rebuild:</p>
+<pre><code>0 2 * * * . /etc/lobot/dockerhub-creds &amp;&amp; /root/GitHub/gpu-jupyter-latest/build_push_qscimages.sh --nightly-only</code></pre>
+<p>Where <code>/etc/lobot/dockerhub-creds</code> contains:</p>
+<pre><code>export DOCKERHUB_PASSWORD='dckr_pat_your_token_here'</code></pre>
+<h3>After a nightly build: updating cluster nodes</h3>
+<p>After the build server pushes a new nightly, pull the new tags onto the target nodes and clean up old ones. Combine all tags from all Dockerfile versions into a single command and use <code>-e</code> to exclude every node that should <em>not</em> receive the update. Use lobot-tui actions <code>[1]</code> and <code>[2]</code> to build the commands interactively — the resulting command is logged and can be copied for future runs.</p>
+<pre><code># Pull — all tags for both versions; exclude all nodes except debwewin and duotronic
+./image-pull.sh \
+  -i queensschoolofcomputingdocker/gpu-jupyter-latest:13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424 \
+  -i queensschoolofcomputingdocker/gpu-jupyter-latest:13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424-nightly \
+  -i queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313 \
+  -i queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly \
+  -b 3 -t 1200 \
+  -e bootstrap,floppy,fz1,fz2,giza,kickstart,lobot-a16-1,makemake,netfusion,newtek,pluto,titan \
+  --yes
+
+# Cleanup — keep same tags; remove all others from debwewin and duotronic
+./image-cleanup.sh \
+  -i queensschoolofcomputingdocker/gpu-jupyter-latest:13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424 \
+  -i queensschoolofcomputingdocker/gpu-jupyter-latest:13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424-nightly \
+  -i queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313 \
+  -i queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly \
+  -e bootstrap,floppy,fz1,fz2,giza,kickstart,lobot-a16-1,makemake,netfusion,newtek,pluto,titan \
+  --yes</code></pre>
+<p>See <a href="https://github.com/Queens-School-of-Computing/Lobot-tools/blob/main/IMAGE-MANAGEMENT.md" target="_blank" rel="noopener">IMAGE-MANAGEMENT.md</a> for full pull and cleanup documentation.</p>
+<hr />
+<h2>Adding a New Dockerfile Version</h2>
+<ol>
+<li>Create <code>.build/Dockerfile.YYYYMMDD</code> with the new date (e.g. <code>Dockerfile.20260601</code>)</li>
+<li>Ensure the file has an active (non-commented) <code>FROM nvidia/cuda:X.Y.Z-...</code> line, a <code>tensorflow==X.Y.Z</code> reference, and an <code>ubuntu24.04</code> (or similar) reference</li>
+<li>Run <code>./build_push_qscimages.sh --baseline-only --dry-run</code> to confirm version extraction</li>
+<li>Run <code>./build_push_qscimages.sh --baseline-only</code> to build and push the baseline</li>
+<li>The nightly cron will pick up the new Dockerfile automatically on its next run</li>
+</ol>
+<hr />
+<h2>Caveats</h2>
+<h3><code>CACHE_BUST</code> and layer caching</h3>
+<p>Each Dockerfile uses <code>ARG CACHE_BUST=1</code> to control which layers rebuild nightly. Layers before <code>ARG CACHE_BUST=1</code> are cached (they only rebuild when the Dockerfile content above that line changes). Layers after it rebuild every nightly run.</p>
+<p>The baseline build does not pass <code>--build-arg CACHE_BUST</code>, so it uses the default value of <code>1</code> and Docker's layer cache applies to all layers — including those that the nightly refreshes. This is intentional: the baseline is a stable snapshot, not a forced-fresh build.</p>
+<p>The nightly-rebuilt layers are: Chrome + ChromeDriver, VS Code, code-server, Ollama, Claude Code, and uv. Everything else (MATLAB, PyTorch, xfce4, etc.) is cached from the baseline.</p>
+<p>To force a completely fresh build of everything:</p>
+<pre><code># Not done by the script — run manually if needed
+docker build --no-cache --platform=linux/amd64 \
+  -f .build/Dockerfile.20260313 \
+  -t queensschoolofcomputingdocker/gpu-jupyter-latest:... \
+  .build/</code></pre>
+<h3>Build server proxy</h3>
+<p>If the build server routes outbound traffic through a proxy, Docker may hit <code>i/o timeout</code> errors on push. The <code>PUSH_RETRIES</code> and <code>PUSH_RETRY_DELAY</code> settings handle transient timeouts automatically. If pushes fail consistently, check <code>HTTP_PROXY</code> / <code>HTTPS_PROXY</code> in the Docker daemon environment.</p>
+<h3>Platform mismatch</h3>
+<p>All builds use <code>--platform=linux/amd64</code> explicitly. If the build server is ARM (e.g. Apple Silicon), ensure <code>docker buildx</code> with <code>linux/amd64</code> emulation is available via QEMU. Builds will be slow under emulation — use a native x86_64 machine for production builds.</p>

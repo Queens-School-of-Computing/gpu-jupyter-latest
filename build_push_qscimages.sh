@@ -10,39 +10,51 @@ PUSH_RETRIES=3         # number of push attempts before giving up
 PUSH_RETRY_DELAY=30    # seconds to wait between push retries
 
 # Local registry (optional). Set to host:port to push there after DockerHub.
-# Leave empty to skip. Example: LOCAL_REGISTRY="130.15.1.150:5050"
-#LOCAL_REGISTRY="distribution.cs.queensu.ca:5000"
+# Leave empty to skip. Example: LOCAL_REGISTRY="distribution.cs.queensu.ca:5000"
 LOCAL_REGISTRY=""
 LOCAL_REGISTRY_USERNAME="admin"
-#LOCAL_REGISTRY_PASSWORD must be set in the environment (export LOCAL_REGISTRY_PASSWORD=...)
+# LOCAL_REGISTRY_PASSWORD must be set in the environment (export LOCAL_REGISTRY_PASSWORD=...)
 LOCAL_REGISTRY_PASSWORD="${LOCAL_REGISTRY_PASSWORD:-}"
 
 DRY_RUN=false
 EMAIL_ENABLED=true
 PUSH_DOCKERHUB=true
 PUSH_ONLY=false
+FORCE_BUILD=false
+FORCE_BASELINE=false
+BASELINE_ONLY=false
+NIGHTLY_ONLY=false
 
 SMTP_SERVER="innovate.cs.queensu.ca"
 SMTP_PORT=25
 SMTP_USE_TLS=false
 SMTP_USERNAME=""
 SMTP_PASSWORD=""
-FROM_EMAIL="lobot-nightlybuild@cs.queensu.ca"
+FROM_EMAIL="lobot-qscimagebuilder@cs.queensu.ca"
 TO_EMAIL="aaron.visser@queensu.ca"
 
-LOG_FILE="/tmp/build_push_nightly_$$.log"
+LOG_FILE="/tmp/build_push_qscimages_$$.log"
 BUILD_DATE=$(date '+%Y%m%d')
 CACHE_BUST=$(date '+%s')   # unique per run — always busts post-CACHE_BUST layers
 
 for arg in "$@"; do
     case $arg in
-        --dry-run) DRY_RUN=true ;;
-        --noemail) EMAIL_ENABLED=false ;;
-        --no-dockerhub) PUSH_DOCKERHUB=false ;;
-        --push-only) PUSH_ONLY=true ;;
+        --dry-run)        DRY_RUN=true ;;
+        --noemail)        EMAIL_ENABLED=false ;;
+        --no-dockerhub)   PUSH_DOCKERHUB=false ;;
+        --push-only)      PUSH_ONLY=true ;;
+        --force)          FORCE_BUILD=true ;;
+        --force-baseline) FORCE_BASELINE=true ;;
+        --baseline-only)  BASELINE_ONLY=true ;;
+        --nightly-only)   NIGHTLY_ONLY=true ;;
         *) echo "Unknown argument: $arg"; exit 1 ;;
     esac
 done
+
+if [ "$BASELINE_ONLY" = "true" ] && [ "$NIGHTLY_ONLY" = "true" ]; then
+    echo "Error: --baseline-only and --nightly-only are mutually exclusive"
+    exit 1
+fi
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 
@@ -228,10 +240,10 @@ build_email_body() {
 
     if [ "$STATUS" = "success" ]; then
         STATUS_COLOR="#2e7d32"
-        STATUS_LABEL="✅ Nightly Build Completed Successfully"
+        STATUS_LABEL="✅ QSC Image Build Completed Successfully"
     else
         STATUS_COLOR="#c62828"
-        STATUS_LABEL="❌ Nightly Build Completed With Errors"
+        STATUS_LABEL="❌ QSC Image Build Completed With Errors"
     fi
 
     TAGS_HTML=""
@@ -253,7 +265,7 @@ build_email_body() {
   <div style="max-width: 900px; margin: 0 auto;">
     <div style="background-color: #2d2d2d; border-left: 5px solid ${STATUS_COLOR}; padding: 15px 20px; margin-bottom: 20px; border-radius: 4px;">
       <h2 style="margin: 0; color: ${STATUS_COLOR}; font-family: monospace;">${STATUS_LABEL}</h2>
-      <p style="margin: 5px 0 0 0; color: #9e9e9e;">build_push_nightly.sh &mdash; $(date)</p>
+      <p style="margin: 5px 0 0 0; color: #9e9e9e;">build_push_qscimages.sh &mdash; $(date)</p>
     </div>
     <div style="background-color: #2d2d2d; padding: 15px 20px; margin-bottom: 20px; border-radius: 4px;">
       <p style="margin: 0 0 8px 0; color: #9e9e9e;">Tags pushed:</p>
@@ -319,114 +331,205 @@ for DOCKERFILE in $DOCKERFILES; do
         continue
     fi
 
-    IMAGE_SUFFIX="${CUDA}cudnn-${TF}tf-matlab-ollama-claude-qsc-u${UBUNTU}-${DATE}-nightly"
+    BASELINE_SUFFIX="${CUDA}cudnn-${TF}tf-matlab-ollama-claude-qsc-u${UBUNTU}-${DATE}"
+    BASELINE_TAG="${REPO}:${BASELINE_SUFFIX}"
+
+    IMAGE_SUFFIX="${BASELINE_SUFFIX}-nightly"
     FLOATING_TAG="${REPO}:${IMAGE_SUFFIX}"
     DATED_TAG="${FLOATING_TAG}-${BUILD_DATE}"
 
+    LOCAL_BASELINE_TAG=""
     LOCAL_FLOATING_TAG=""
     LOCAL_DATED_TAG=""
     if [ -n "$LOCAL_REGISTRY" ]; then
+        LOCAL_BASELINE_TAG="${LOCAL_REGISTRY}/gpu-jupyter-latest:${BASELINE_SUFFIX}"
         LOCAL_FLOATING_TAG="${LOCAL_REGISTRY}/gpu-jupyter-latest:${IMAGE_SUFFIX}"
         LOCAL_DATED_TAG="${LOCAL_FLOATING_TAG}-${BUILD_DATE}"
     fi
 
     log "=========================================="
-    log " Dockerfile:   $DOCKERFILE"
-    log " CUDA:         $CUDA"
-    log " Ubuntu:       $UBUNTU"
-    log " TensorFlow:   $TF"
-    log " Floating tag: $FLOATING_TAG"
-    log " Dated tag:    $DATED_TAG"
+    log " Dockerfile:    $DOCKERFILE"
+    log " CUDA:          $CUDA"
+    log " Ubuntu:        $UBUNTU"
+    log " TensorFlow:    $TF"
+    log " Baseline tag:  $BASELINE_TAG"
+    log " Floating tag:  $FLOATING_TAG"
+    log " Dated tag:     $DATED_TAG"
     if [ -n "$LOCAL_REGISTRY" ]; then
-        log " Local:        $LOCAL_FLOATING_TAG"
-        log " Local dated:  $LOCAL_DATED_TAG"
+        log " Local base:    $LOCAL_BASELINE_TAG"
+        log " Local:         $LOCAL_FLOATING_TAG"
+        log " Local dated:   $LOCAL_DATED_TAG"
     fi
     log "=========================================="
 
     if [ "$DRY_RUN" = "true" ]; then
-        if [ "$PUSH_ONLY" = "true" ]; then
-            log "[dry-run] skipping build (--push-only) — would use existing: $FLOATING_TAG"
-        else
-            log "[dry-run] docker build --platform=linux/amd64 --build-arg CACHE_BUST=$CACHE_BUST -f $DOCKERFILE -t $FLOATING_TAG .build/"
-        fi
-        log "[dry-run] docker tag $FLOATING_TAG $DATED_TAG"
-        if [ "$PUSH_DOCKERHUB" = "true" ]; then
-            log "[dry-run] docker push $FLOATING_TAG"
-            log "[dry-run] docker push $DATED_TAG"
-            log "[dry-run] prune dated tags: keep $KEEP_NIGHTLY_COUNT for *-${DATE}-nightly-*"
-        else
-            log "[dry-run] skipping DockerHub push (--no-dockerhub)"
-        fi
-        if [ -n "$LOCAL_REGISTRY" ]; then
-            log "[dry-run] docker tag $FLOATING_TAG $LOCAL_FLOATING_TAG"
-            log "[dry-run] docker tag $FLOATING_TAG $LOCAL_DATED_TAG"
-            log "[dry-run] docker push $LOCAL_FLOATING_TAG"
-            log "[dry-run] docker push $LOCAL_DATED_TAG"
-        fi
-        BUILT_TAGS+=("$FLOATING_TAG" "$DATED_TAG")
-        [ -n "$LOCAL_REGISTRY" ] && BUILT_TAGS+=("$LOCAL_FLOATING_TAG" "$LOCAL_DATED_TAG")
-    else
-        BUILD_START=$(date +%s)
-        if [ "$PUSH_ONLY" = "true" ]; then
-            log "⏭️  Skipping build (--push-only) — using existing local image: $FLOATING_TAG"
-            if ! docker image inspect "$FLOATING_TAG" > /dev/null 2>&1; then
-                log "❌ Image not found locally: $FLOATING_TAG"
-                FAILED=true
-                continue
+
+        # ── Baseline dry-run ──
+        if [ "$NIGHTLY_ONLY" != "true" ]; then
+            if [ "$PUSH_ONLY" = "true" ]; then
+                log "[dry-run] skipping baseline build (--push-only) — would use existing: $BASELINE_TAG"
+            elif docker image inspect "$BASELINE_TAG" > /dev/null 2>&1 && [ "$FORCE_BASELINE" != "true" ]; then
+                log "[dry-run] baseline already exists — would skip (use --force-baseline to rebuild): $BASELINE_TAG"
+            else
+                log "[dry-run] docker build --platform=linux/amd64 -f $DOCKERFILE -t $BASELINE_TAG .build/"
             fi
-            docker tag "$FLOATING_TAG" "$DATED_TAG"
-            BUILD_OK=true
-        elif docker build --platform=linux/amd64 --build-arg CACHE_BUST="$CACHE_BUST" -f "$DOCKERFILE" -t "$FLOATING_TAG" .build/ 2>&1 | tee -a "$LOG_FILE"; then
-            log "⏱  Build time: $(format_duration $(( $(date +%s) - BUILD_START )))"
-            docker tag "$FLOATING_TAG" "$DATED_TAG"
-            BUILD_OK=true
-        else
-            log "❌ Build failed after $(format_duration $(( $(date +%s) - BUILD_START ))): $FLOATING_TAG"
-            FAILED=true
-            BUILD_OK=false
+            if [ "$PUSH_DOCKERHUB" = "true" ]; then
+                log "[dry-run] docker push $BASELINE_TAG"
+            fi
+            if [ -n "$LOCAL_REGISTRY" ]; then
+                log "[dry-run] docker push $LOCAL_BASELINE_TAG"
+            fi
         fi
 
-        if [ "${BUILD_OK:-false}" = "true" ]; then
-
+        # ── Nightly dry-run ──
+        if [ "$BASELINE_ONLY" != "true" ]; then
+            if [ "$PUSH_ONLY" = "true" ]; then
+                log "[dry-run] skipping nightly build (--push-only) — would use existing: $FLOATING_TAG"
+            elif docker image inspect "$DATED_TAG" > /dev/null 2>&1 && [ "$FORCE_BUILD" != "true" ]; then
+                log "[dry-run] today's nightly already exists — would skip (use --force to rebuild): $DATED_TAG"
+            else
+                log "[dry-run] docker build --platform=linux/amd64 --build-arg CACHE_BUST=$CACHE_BUST -f $DOCKERFILE -t $FLOATING_TAG .build/"
+            fi
+            log "[dry-run] docker tag $FLOATING_TAG $DATED_TAG"
             if [ "$PUSH_DOCKERHUB" = "true" ]; then
-                PUSH_OK=true
-                PUSH_START=$(date +%s); push_with_retry "$FLOATING_TAG" || PUSH_OK=false
-                log "⏱  DockerHub push (floating): $(format_duration $(( $(date +%s) - PUSH_START )))"
-                PUSH_START=$(date +%s); push_with_retry "$DATED_TAG"    || PUSH_OK=false
-                log "⏱  DockerHub push (dated):    $(format_duration $(( $(date +%s) - PUSH_START )))"
+                log "[dry-run] docker push $FLOATING_TAG"
+                log "[dry-run] docker push $DATED_TAG"
+                log "[dry-run] prune dated tags: keep $KEEP_NIGHTLY_COUNT for *-${DATE}-nightly-*"
+            else
+                log "[dry-run] skipping DockerHub push (--no-dockerhub)"
+            fi
+            if [ -n "$LOCAL_REGISTRY" ]; then
+                log "[dry-run] docker push $LOCAL_FLOATING_TAG"
+                log "[dry-run] docker push $LOCAL_DATED_TAG"
+            fi
+        fi
 
-                if [ "$PUSH_OK" = "true" ]; then
-                    log "✅ Done: $FLOATING_TAG"
-                    log "✅ Done: $DATED_TAG"
-                    BUILT_TAGS+=("$FLOATING_TAG" "$DATED_TAG")
-                    prune_nightly_tags "$DATE" 2>&1 | tee -a "$LOG_FILE"
+        BUILT_TAGS+=("$BASELINE_TAG" "$FLOATING_TAG" "$DATED_TAG")
+        [ -n "$LOCAL_REGISTRY" ] && BUILT_TAGS+=("$LOCAL_BASELINE_TAG" "$LOCAL_FLOATING_TAG" "$LOCAL_DATED_TAG")
+
+    else
+
+        # ── Baseline phase ────────────────────────────────────────────────────
+        if [ "$NIGHTLY_ONLY" != "true" ]; then
+            BASELINE_OK=false
+            if [ "$PUSH_ONLY" = "true" ]; then
+                if docker image inspect "$BASELINE_TAG" > /dev/null 2>&1; then
+                    log "⏭️  Skipping baseline build (--push-only) — using existing: $BASELINE_TAG"
+                    BASELINE_OK=true
                 else
-                    log "❌ Push failed for $FLOATING_TAG / $DATED_TAG"
+                    log "⚠️  Baseline image not found locally — skipping: $BASELINE_TAG"
+                fi
+            elif docker image inspect "$BASELINE_TAG" > /dev/null 2>&1 && [ "$FORCE_BASELINE" != "true" ]; then
+                log "⏭️  Baseline already exists — skipping (use --force-baseline to rebuild): $BASELINE_TAG"
+                BASELINE_OK=true
+            else
+                BUILD_START=$(date +%s)
+                if docker build --platform=linux/amd64 -f "$DOCKERFILE" -t "$BASELINE_TAG" .build/ 2>&1 | tee -a "$LOG_FILE"; then
+                    log "⏱  Baseline build time: $(format_duration $(( $(date +%s) - BUILD_START )))"
+                    BASELINE_OK=true
+                else
+                    log "❌ Baseline build failed after $(format_duration $(( $(date +%s) - BUILD_START ))): $BASELINE_TAG"
                     FAILED=true
                 fi
-            else
-                log "⏭️  Skipping DockerHub push (--no-dockerhub)"
             fi
 
-            # Local registry push (independent of DockerHub result)
-            if [ -n "$LOCAL_REGISTRY" ]; then
-                log "--- Pushing to local registry: $LOCAL_REGISTRY ---"
-                docker tag "$FLOATING_TAG" "$LOCAL_FLOATING_TAG"
-                docker tag "$FLOATING_TAG" "$LOCAL_DATED_TAG"
-                LOCAL_PUSH_OK=true
-                PUSH_START=$(date +%s); push_with_retry "$LOCAL_FLOATING_TAG" || LOCAL_PUSH_OK=false
-                log "⏱  Local push (floating): $(format_duration $(( $(date +%s) - PUSH_START )))"
-                PUSH_START=$(date +%s); push_with_retry "$LOCAL_DATED_TAG"    || LOCAL_PUSH_OK=false
-                log "⏱  Local push (dated):    $(format_duration $(( $(date +%s) - PUSH_START )))"
-                if [ "$LOCAL_PUSH_OK" = "true" ]; then
-                    log "✅ Local: $LOCAL_FLOATING_TAG"
-                    log "✅ Local: $LOCAL_DATED_TAG"
-                    BUILT_TAGS+=("$LOCAL_FLOATING_TAG" "$LOCAL_DATED_TAG")
+            if [ "$BASELINE_OK" = "true" ]; then
+                if [ "$PUSH_DOCKERHUB" = "true" ]; then
+                    PUSH_START=$(date +%s)
+                    if push_with_retry "$BASELINE_TAG"; then
+                        log "⏱  DockerHub push (baseline): $(format_duration $(( $(date +%s) - PUSH_START )))"
+                        log "✅ Done: $BASELINE_TAG"
+                        BUILT_TAGS+=("$BASELINE_TAG")
+                    else
+                        log "⏱  DockerHub push (baseline): $(format_duration $(( $(date +%s) - PUSH_START )))"
+                        log "❌ Push failed: $BASELINE_TAG"
+                        FAILED=true
+                    fi
                 else
-                    log "⚠️  Local registry push failed (non-fatal) for $LOCAL_FLOATING_TAG"
+                    log "⏭️  Skipping DockerHub push (--no-dockerhub)"
+                fi
+
+                if [ -n "$LOCAL_REGISTRY" ] && [ -n "$LOCAL_BASELINE_TAG" ]; then
+                    docker tag "$BASELINE_TAG" "$LOCAL_BASELINE_TAG"
+                    PUSH_START=$(date +%s)
+                    if push_with_retry "$LOCAL_BASELINE_TAG"; then
+                        log "⏱  Local push (baseline): $(format_duration $(( $(date +%s) - PUSH_START )))"
+                        log "✅ Local: $LOCAL_BASELINE_TAG"
+                        BUILT_TAGS+=("$LOCAL_BASELINE_TAG")
+                    else
+                        log "⏱  Local push (baseline): $(format_duration $(( $(date +%s) - PUSH_START )))"
+                        log "⚠️  Local baseline push failed (non-fatal): $LOCAL_BASELINE_TAG"
+                    fi
                 fi
             fi
         fi
+
+        # ── Nightly phase ─────────────────────────────────────────────────────
+        if [ "$BASELINE_ONLY" != "true" ]; then
+            BUILD_START=$(date +%s)
+            BUILD_OK=false
+            if [ "$PUSH_ONLY" = "true" ]; then
+                log "⏭️  Skipping nightly build (--push-only) — using existing: $FLOATING_TAG"
+                if ! docker image inspect "$FLOATING_TAG" > /dev/null 2>&1; then
+                    log "❌ Image not found locally: $FLOATING_TAG"
+                    FAILED=true
+                else
+                    docker tag "$FLOATING_TAG" "$DATED_TAG"
+                    BUILD_OK=true
+                fi
+            elif docker image inspect "$DATED_TAG" > /dev/null 2>&1 && [ "$FORCE_BUILD" != "true" ]; then
+                log "⏭️  Today's nightly already exists — skipping (use --force to rebuild): $DATED_TAG"
+                BUILD_OK=true
+            elif docker build --platform=linux/amd64 --build-arg CACHE_BUST="$CACHE_BUST" -f "$DOCKERFILE" -t "$FLOATING_TAG" .build/ 2>&1 | tee -a "$LOG_FILE"; then
+                log "⏱  Nightly build time: $(format_duration $(( $(date +%s) - BUILD_START )))"
+                docker tag "$FLOATING_TAG" "$DATED_TAG"
+                BUILD_OK=true
+            else
+                log "❌ Nightly build failed after $(format_duration $(( $(date +%s) - BUILD_START ))): $FLOATING_TAG"
+                FAILED=true
+            fi
+
+            if [ "$BUILD_OK" = "true" ]; then
+                if [ "$PUSH_DOCKERHUB" = "true" ]; then
+                    PUSH_OK=true
+                    PUSH_START=$(date +%s); push_with_retry "$FLOATING_TAG" || PUSH_OK=false
+                    log "⏱  DockerHub push (floating): $(format_duration $(( $(date +%s) - PUSH_START )))"
+                    PUSH_START=$(date +%s); push_with_retry "$DATED_TAG"    || PUSH_OK=false
+                    log "⏱  DockerHub push (dated):    $(format_duration $(( $(date +%s) - PUSH_START )))"
+
+                    if [ "$PUSH_OK" = "true" ]; then
+                        log "✅ Done: $FLOATING_TAG"
+                        log "✅ Done: $DATED_TAG"
+                        BUILT_TAGS+=("$FLOATING_TAG" "$DATED_TAG")
+                        prune_nightly_tags "$DATE" 2>&1 | tee -a "$LOG_FILE"
+                    else
+                        log "❌ Push failed for $FLOATING_TAG / $DATED_TAG"
+                        FAILED=true
+                    fi
+                else
+                    log "⏭️  Skipping DockerHub push (--no-dockerhub)"
+                fi
+
+                if [ -n "$LOCAL_REGISTRY" ]; then
+                    log "--- Pushing to local registry: $LOCAL_REGISTRY ---"
+                    docker tag "$FLOATING_TAG" "$LOCAL_FLOATING_TAG"
+                    docker tag "$FLOATING_TAG" "$LOCAL_DATED_TAG"
+                    LOCAL_PUSH_OK=true
+                    PUSH_START=$(date +%s); push_with_retry "$LOCAL_FLOATING_TAG" || LOCAL_PUSH_OK=false
+                    log "⏱  Local push (floating): $(format_duration $(( $(date +%s) - PUSH_START )))"
+                    PUSH_START=$(date +%s); push_with_retry "$LOCAL_DATED_TAG"    || LOCAL_PUSH_OK=false
+                    log "⏱  Local push (dated):    $(format_duration $(( $(date +%s) - PUSH_START )))"
+                    if [ "$LOCAL_PUSH_OK" = "true" ]; then
+                        log "✅ Local: $LOCAL_FLOATING_TAG"
+                        log "✅ Local: $LOCAL_DATED_TAG"
+                        BUILT_TAGS+=("$LOCAL_FLOATING_TAG" "$LOCAL_DATED_TAG")
+                    else
+                        log "⚠️  Local registry push failed (non-fatal) for $LOCAL_FLOATING_TAG"
+                    fi
+                fi
+            fi
+        fi
+
     fi
 
     log ""
@@ -439,7 +542,7 @@ if [ "$FAILED" = "true" ]; then
     log "=========================================="
     BODY_TMP=$(mktemp)
     build_email_body "failure" "${BUILT_TAGS[@]:-}" > "$BODY_TMP"
-    send_email "❌ Nightly build FAILED | $(date '+%Y-%m-%d')" "$BODY_TMP"
+    send_email "❌ QSC image build FAILED | $(date '+%Y-%m-%d')" "$BODY_TMP"
     rm -f "$LOG_FILE"
     exit 1
 else
@@ -449,6 +552,6 @@ else
     log "=========================================="
     BODY_TMP=$(mktemp)
     build_email_body "success" "${BUILT_TAGS[@]}" > "$BODY_TMP"
-    send_email "✅ Nightly build complete | $(date '+%Y-%m-%d') | $((${#BUILT_TAGS[@]} / 2)) image(s)" "$BODY_TMP"
+    send_email "✅ QSC image build complete | $(date '+%Y-%m-%d') | $((${#BUILT_TAGS[@]})) tag(s)" "$BODY_TMP"
     rm -f "$LOG_FILE"
 fi
