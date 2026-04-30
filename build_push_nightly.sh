@@ -11,10 +11,10 @@ PUSH_RETRY_DELAY=30    # seconds to wait between push retries
 
 # Local registry (optional). Set to host:port to push there after DockerHub.
 # Leave empty to skip. Example: LOCAL_REGISTRY="130.15.1.150:5050"
-#LOCAL_REGISTRY="130.15.1.150:5050"
+#LOCAL_REGISTRY="distribution.cs.queensu.ca:5000"
 LOCAL_REGISTRY=""
 LOCAL_REGISTRY_USERNAME="admin"
-# LOCAL_REGISTRY_PASSWORD must be set in the environment (export LOCAL_REGISTRY_PASSWORD=...)
+#LOCAL_REGISTRY_PASSWORD must be set in the environment (export LOCAL_REGISTRY_PASSWORD=...)
 LOCAL_REGISTRY_PASSWORD="${LOCAL_REGISTRY_PASSWORD:-}"
 
 DRY_RUN=false
@@ -65,6 +65,17 @@ push_with_retry() {
     done
     log "❌ Push failed after $PUSH_RETRIES attempts: $tag"
     return 1
+}
+
+format_duration() {
+    local secs=$1
+    local h=$((secs / 3600))
+    local m=$(((secs % 3600) / 60))
+    local s=$((secs % 60))
+    if [ $h -gt 0 ]; then printf "%dh %dm %ds" $h $m $s
+    elif [ $m -gt 0 ]; then printf "%dm %ds" $m $s
+    else printf "%ds" $s
+    fi
 }
 
 # ── DockerHub tag pruning ─────────────────────────────────────────────────────
@@ -265,6 +276,7 @@ BODYEOF
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 > "$LOG_FILE"
+SCRIPT_START=$(date +%s)
 
 if [ "$DRY_RUN" = "true" ]; then
     log "=== DRY RUN — no builds or pushes will happen ==="
@@ -354,6 +366,7 @@ for DOCKERFILE in $DOCKERFILES; do
         BUILT_TAGS+=("$FLOATING_TAG" "$DATED_TAG")
         [ -n "$LOCAL_REGISTRY" ] && BUILT_TAGS+=("$LOCAL_FLOATING_TAG" "$LOCAL_DATED_TAG")
     else
+        BUILD_START=$(date +%s)
         if [ "$PUSH_ONLY" = "true" ]; then
             log "⏭️  Skipping build (--push-only) — using existing local image: $FLOATING_TAG"
             if ! docker image inspect "$FLOATING_TAG" > /dev/null 2>&1; then
@@ -364,10 +377,11 @@ for DOCKERFILE in $DOCKERFILES; do
             docker tag "$FLOATING_TAG" "$DATED_TAG"
             BUILD_OK=true
         elif docker build --platform=linux/amd64 --build-arg CACHE_BUST="$CACHE_BUST" -f "$DOCKERFILE" -t "$FLOATING_TAG" .build/ 2>&1 | tee -a "$LOG_FILE"; then
+            log "⏱  Build time: $(format_duration $(( $(date +%s) - BUILD_START )))"
             docker tag "$FLOATING_TAG" "$DATED_TAG"
             BUILD_OK=true
         else
-            log "❌ Build failed: $FLOATING_TAG"
+            log "❌ Build failed after $(format_duration $(( $(date +%s) - BUILD_START ))): $FLOATING_TAG"
             FAILED=true
             BUILD_OK=false
         fi
@@ -376,8 +390,10 @@ for DOCKERFILE in $DOCKERFILES; do
 
             if [ "$PUSH_DOCKERHUB" = "true" ]; then
                 PUSH_OK=true
-                push_with_retry "$FLOATING_TAG" || PUSH_OK=false
-                push_with_retry "$DATED_TAG"    || PUSH_OK=false
+                PUSH_START=$(date +%s); push_with_retry "$FLOATING_TAG" || PUSH_OK=false
+                log "⏱  DockerHub push (floating): $(format_duration $(( $(date +%s) - PUSH_START )))"
+                PUSH_START=$(date +%s); push_with_retry "$DATED_TAG"    || PUSH_OK=false
+                log "⏱  DockerHub push (dated):    $(format_duration $(( $(date +%s) - PUSH_START )))"
 
                 if [ "$PUSH_OK" = "true" ]; then
                     log "✅ Done: $FLOATING_TAG"
@@ -398,8 +414,10 @@ for DOCKERFILE in $DOCKERFILES; do
                 docker tag "$FLOATING_TAG" "$LOCAL_FLOATING_TAG"
                 docker tag "$FLOATING_TAG" "$LOCAL_DATED_TAG"
                 LOCAL_PUSH_OK=true
-                push_with_retry "$LOCAL_FLOATING_TAG" || LOCAL_PUSH_OK=false
-                push_with_retry "$LOCAL_DATED_TAG"    || LOCAL_PUSH_OK=false
+                PUSH_START=$(date +%s); push_with_retry "$LOCAL_FLOATING_TAG" || LOCAL_PUSH_OK=false
+                log "⏱  Local push (floating): $(format_duration $(( $(date +%s) - PUSH_START )))"
+                PUSH_START=$(date +%s); push_with_retry "$LOCAL_DATED_TAG"    || LOCAL_PUSH_OK=false
+                log "⏱  Local push (dated):    $(format_duration $(( $(date +%s) - PUSH_START )))"
                 if [ "$LOCAL_PUSH_OK" = "true" ]; then
                     log "✅ Local: $LOCAL_FLOATING_TAG"
                     log "✅ Local: $LOCAL_DATED_TAG"
@@ -417,6 +435,7 @@ done
 if [ "$FAILED" = "true" ]; then
     log "=========================================="
     log "❌ One or more builds/pushes failed."
+    log "⏱  Total time: $(format_duration $(( $(date +%s) - SCRIPT_START )))"
     log "=========================================="
     BODY_TMP=$(mktemp)
     build_email_body "failure" "${BUILT_TAGS[@]:-}" > "$BODY_TMP"
@@ -426,6 +445,7 @@ if [ "$FAILED" = "true" ]; then
 else
     log "=========================================="
     log "✅ All builds complete."
+    log "⏱  Total time: $(format_duration $(( $(date +%s) - SCRIPT_START )))"
     log "=========================================="
     BODY_TMP=$(mktemp)
     build_email_body "success" "${BUILT_TAGS[@]}" > "$BODY_TMP"
