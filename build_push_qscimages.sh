@@ -178,6 +178,34 @@ PYEOF
     fi
 }
 
+# ── Local image pruning ───────────────────────────────────────────────────────
+
+prune_local_nightly_images() {
+    local DOCKERFILE_DATE="$1"
+
+    if [ "$DRY_RUN" = "true" ]; then
+        log "[dry-run] prune_local_nightly_images: would remove local dated images for *-${DOCKERFILE_DATE}-nightly-*"
+        return 0
+    fi
+
+    local dated_images
+    dated_images=$(docker images --format "{{.Repository}}:{{.Tag}}" \
+        | grep -E "^${REPO}:.*-${DOCKERFILE_DATE}-nightly-[0-9]{8}$" || true)
+
+    if [ -z "$dated_images" ]; then
+        log "No local dated nightly images to prune for ${DOCKERFILE_DATE}"
+        return 0
+    fi
+
+    echo "$dated_images" | while read -r img; do
+        if docker rmi "$img" 2>&1 | tee -a "$LOG_FILE"; then
+            log "🗑  Removed local: $img"
+        else
+            log "⚠️  Could not remove local image (may be in use): $img"
+        fi
+    done
+}
+
 # ── Email ─────────────────────────────────────────────────────────────────────
 
 send_email() {
@@ -402,6 +430,7 @@ for DOCKERFILE in $DOCKERFILES; do
                 log "[dry-run] docker push $FLOATING_TAG"
                 log "[dry-run] docker push $DATED_TAG"
                 log "[dry-run] prune dated tags: keep $KEEP_NIGHTLY_COUNT for *-${DATE}-nightly-*"
+                log "[dry-run] prune local dated images for *-${DATE}-nightly-*"
             else
                 log "[dry-run] skipping DockerHub push (--no-dockerhub)"
             fi
@@ -509,6 +538,7 @@ for DOCKERFILE in $DOCKERFILES; do
                         log "✅ Done: $DATED_TAG"
                         BUILT_TAGS+=("$FLOATING_TAG" "$DATED_TAG")
                         prune_nightly_tags "$DATE" 2>&1 | tee -a "$LOG_FILE"
+                        prune_local_nightly_images "$DATE" 2>&1 | tee -a "$LOG_FILE"
                     else
                         log "❌ Push failed for $FLOATING_TAG / $DATED_TAG"
                         FAILED=true
