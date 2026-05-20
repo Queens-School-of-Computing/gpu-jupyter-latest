@@ -855,9 +855,10 @@ RUN curl -fsSL https://code-server.dev/install.sh | sh \
          curl -fL \
            -H "Accept: application/octet-stream" \
            "https://marketplace.visualstudio.com/_apis/public/gallery/publishers/ms-python/vsextensions/python/latest/vspackage" \
-           -o /tmp/ms-python.vsix \
+           -o /tmp/ms-python.vsix.gz \
+         && gunzip /tmp/ms-python.vsix.gz \
          && code-server --install-extension /tmp/ms-python.vsix \
-         && rm /tmp/ms-python.vsix \
+         && rm -f /tmp/ms-python.vsix \
        )
 
 # Ollama
