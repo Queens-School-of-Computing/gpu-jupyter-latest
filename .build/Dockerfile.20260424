@@ -844,9 +844,21 @@ RUN wget -q 'https://update.code.visualstudio.com/latest/linux-deb-x64/stable' -
     && dpkg -i /tmp/code.deb \
     && rm /tmp/code.deb
 
-# code-server + Python extension
+# code-server + Python extension (Open VSX with retry, MS marketplace fallback)
 RUN curl -fsSL https://code-server.dev/install.sh | sh \
-    && code-server --install-extension ms-python.python
+    && ( \
+         for i in 1 2 3; do \
+           code-server --install-extension ms-python.python && exit 0; \
+           echo "Open VSX attempt $i/3 failed, retrying in 30s..."; sleep 30; \
+         done; \
+         echo "Open VSX exhausted — falling back to MS marketplace..."; \
+         curl -fL \
+           -H "Accept: application/octet-stream" \
+           "https://marketplace.visualstudio.com/_apis/public/gallery/publishers/ms-python/vsextensions/python/latest/vspackage" \
+           -o /tmp/ms-python.vsix \
+         && code-server --install-extension /tmp/ms-python.vsix \
+         && rm /tmp/ms-python.vsix \
+       )
 
 # Ollama
 RUN curl -fsSL https://ollama.com/install.sh | sh
