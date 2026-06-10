@@ -1,28 +1,12 @@
 # QSC Image Components
 
-What's inside the QSC JupyterHub images, per Dockerfile version. Written to be
-rendered by an information icon on the JupyterHub spawn page's image
-selection, alongside the live nightly versions in
-[component-versions.json](component-versions.json).
-
-How to read this file:
-
-- **Pinned at baseline** — versions fixed in the Dockerfile; they change only
-  when a new dated Dockerfile version is created.
-- **Frozen at baseline build** — installed as "latest" when the baseline image
-  was first built, then cached; no explicit pin in the Dockerfile.
-- **Updated nightly** — refreshed automatically whenever upstream releases a
-  new version. Current versions live in
-  [component-versions.json](component-versions.json) (`build_date` says which
-  nightly tag they correspond to).
+What's installed in each Lobot image. Select an image on the spawn page to see what tools and libraries you'll have available.
 
 ---
 
-## Image: `...-20260424` (CUDA 13.2)
+## CUDA 13.2 Image (April 24, 2026)
 
-Tag: `queensschoolofcomputingdocker/gpu-jupyter-latest:13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424[-nightly]`
-
-### GPU / ML stack (pinned at baseline)
+### GPU & Machine Learning
 
 | Component | Version |
 |-----------|---------|
@@ -38,11 +22,9 @@ Tag: `queensschoolofcomputingdocker/gpu-jupyter-latest:13.2.1cudnn-2.20.0tf-matl
 
 ---
 
-## Image: `...-20260313` (CUDA 13.0)
+## CUDA 13.0 Image (March 13, 2026)
 
-Tag: `queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313[-nightly]`
-
-### GPU / ML stack (pinned at baseline)
+### GPU & Machine Learning
 
 | Component | Version |
 |-----------|---------|
@@ -67,32 +49,30 @@ DSP System, Symbolic Math, Statistics and Machine Learning, Parallel
 Computing, Antenna, 5G, LTE, Phased Array System, Optimization, Global
 Optimization, Mapping. Licensed via the Queen's network license server.
 
-### Jupyter environment
+### Jupyter & Notebooks
 
 | Component | Version |
 |-----------|---------|
-| JupyterLab + JupyterHub | frozen at baseline build (jupyter/docker-stacks) |
-| Julia (+ IJulia kernel) | frozen at baseline build |
-| R (+ IRkernel) | frozen at baseline build |
+| JupyterLab + JupyterHub | Latest stable |
+| Julia | Latest stable |
+| R | Latest stable |
 | jupyterlab-git | 0.51.3 |
 | plotly | 5.24.1 |
 | ipyleaflet | 0.19.2 |
 | ipywidgets | 8.1.5 |
 | jupyterlab-spellchecker | 0.8.4 |
 
-### Desktop / remote access (pinned at baseline)
+### Desktop & Remote Access
 
 | Component | Version |
 |-----------|---------|
 | TurboVNC | 3.3 |
-| xfce4 desktop | frozen at baseline build |
-| GitHub CLI (`gh`) | frozen at baseline build |
+| xfce4 desktop | Latest stable |
+| GitHub CLI | Latest stable |
 
-### Updated nightly
+### Automatically Updated Tools
 
-Live versions for these are in
-[component-versions.json](component-versions.json) — they track upstream
-releases automatically:
+These are kept up-to-date automatically:
 
 | Component | What it is |
 |-----------|------------|
@@ -106,9 +86,3 @@ releases automatically:
 | `uv` | uv Python package manager |
 | `claude_code` | Claude Code CLI |
 
----
-
-*Maintainers: update the per-image sections when adding a new dated
-Dockerfile version (see BUILD-PUSH-QSCIMAGES.md → Adding a New Dockerfile
-Version). The nightly table needs no maintenance — it is driven by
-`component-versions.json`.*
