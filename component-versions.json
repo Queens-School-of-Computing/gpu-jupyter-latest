@@ -1,0 +1,18 @@
+{
+  "build_date": "20260610",
+  "components": {
+    "selenium": "4.44.0",
+    "vscode": "1.124.0",
+    "code_server": "4.123.0",
+    "chrome": "149.0.7827.55",
+    "chromedriver": "149.0.7827.55",
+    "ollama": "0.30.7",
+    "opencode": "1.17.1",
+    "uv": "0.11.19",
+    "claude_code": "2.1.170"
+  },
+  "dockerfiles": {
+    "Dockerfile.20260313": "a5fb3ac1b6d12cfacc457594e20452f75768e5ee90d3f91018fdec7e11235f2c",
+    "Dockerfile.20260424": "27f96a10d0e470e03dcd93d66173c00940511a49fd2c183fc4e84cbfcd6b3b42"
+  }
+}
