@@ -334,8 +334,8 @@ TO_EMAIL="aaron.visser+lobot@queensu.ca,whb1+lobot@queensu.ca"</code></pre>
 # Full nightly build and push (run inside tmux)
 ./build_push_qscimages.sh --nightly-only</code></pre>
 <h3>Automated (cron)</h3>
-<p>Add to crontab on the build server. Run at 02:00 nightly. Use <code>--nightly-only</code> so the cron job never accidentally triggers a baseline rebuild:</p>
-<pre><code>0 2 * * * . /etc/lobot/dockerhub-creds &amp;&amp; /root/GitHub/gpu-jupyter-latest/build_push_qscimages.sh --nightly-only</code></pre>
+<p>Add to crontab on the build server. Run at 02:00 nightly. Use <code>--nightly-only</code> so the cron job never accidentally triggers a baseline rebuild. Pull the repo first so the run always uses the latest script, Dockerfiles, and manifest — this also keeps the clone fast-forwardable so the manifest auto-commit can push:</p>
+<pre><code>0 2 * * * . /etc/lobot/dockerhub-creds &amp;&amp; cd /root/GitHub/gpu-jupyter-latest &amp;&amp; git pull --rebase &amp;&amp; ./build_push_qscimages.sh --nightly-only</code></pre>
 <p>Where <code>/etc/lobot/dockerhub-creds</code> contains:</p>
 <pre><code>export DOCKERHUB_PASSWORD='dckr_pat_your_token_here'</code></pre>
 <p>For the <code>component-versions.json</code> auto-commit to reach GitHub, the build server's clone also needs push credentials (e.g. a GitHub PAT stored via <code>git config credential.helper store</code>). Without them the script logs a warning and continues — skip detection still works from the local manifest.</p>

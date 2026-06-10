@@ -578,10 +578,13 @@ export DOCKERHUB_PASSWORD='dckr_pat_your_token_here'
 ### Automated (cron)
 
 Add to crontab on the build server. Run at 02:00 nightly. Use `--nightly-only`
-so the cron job never accidentally triggers a baseline rebuild:
+so the cron job never accidentally triggers a baseline rebuild. Pull the repo
+first so the run always uses the latest script, Dockerfiles, and manifest —
+this also keeps the clone fast-forwardable so the manifest auto-commit can
+push:
 
 ```
-0 2 * * * . /etc/lobot/dockerhub-creds && /root/GitHub/gpu-jupyter-latest/build_push_qscimages.sh --nightly-only
+0 2 * * * . /etc/lobot/dockerhub-creds && cd /root/GitHub/gpu-jupyter-latest && git pull --rebase && ./build_push_qscimages.sh --nightly-only
 ```
 
 Where `/etc/lobot/dockerhub-creds` contains:
