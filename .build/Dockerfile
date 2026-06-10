@@ -825,8 +825,11 @@ RUN wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd6
     && rm /tmp/google-chrome-stable_current_amd64.deb \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# ChromeDriver major version must match the Chrome installed above
 RUN mkdir -p /chromedriver \
-    && wget -q https://storage.googleapis.com/chrome-for-testing-public/145.0.7632.46/linux64/chromedriver-linux64.zip -O /tmp/chromedriver-linux64.zip \
+    && CHROME_MAJOR=$(google-chrome --version | grep -oE '[0-9]+' | head -1) \
+    && DRIVER_VERSION=$(wget -qO- "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_${CHROME_MAJOR}") \
+    && wget -q "https://storage.googleapis.com/chrome-for-testing-public/${DRIVER_VERSION}/linux64/chromedriver-linux64.zip" -O /tmp/chromedriver-linux64.zip \
     && unzip /tmp/chromedriver-linux64.zip -d /tmp/ \
     && cp /tmp/chromedriver-linux64/chromedriver /chromedriver/ \
     && rm -rf /tmp/chromedriver-linux64.zip /tmp/chromedriver-linux64

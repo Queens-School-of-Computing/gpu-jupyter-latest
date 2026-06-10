@@ -821,7 +821,8 @@ RUN pip install --root-user-action ignore PyVirtualDisplay selenium \
  && fix-permissions "/home/${NB_USER}"
 
 RUN mkdir /chromedriver 
-RUN wget https://storage.googleapis.com/chrome-for-testing-public/145.0.7632.46/linux64/chromedriver-linux64.zip && unzip chromedriver-linux64.zip && cp chromedriver-linux64/chromedriver /chromedriver/
+# ChromeDriver major version must match the Chrome installed above
+RUN CHROME_MAJOR=$(google-chrome --version | grep -oE '[0-9]+' | head -1) && DRIVER_VERSION=$(wget -qO- "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_${CHROME_MAJOR}") && wget "https://storage.googleapis.com/chrome-for-testing-public/${DRIVER_VERSION}/linux64/chromedriver-linux64.zip" && unzip chromedriver-linux64.zip && cp chromedriver-linux64/chromedriver /chromedriver/
 RUN rm chromedriver-linux64.zip 
 RUN rm -r chromedriver-linux64
 ENV PATH "$PATH:/chromedriver"
