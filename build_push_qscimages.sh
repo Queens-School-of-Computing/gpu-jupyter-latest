@@ -9,6 +9,12 @@ KEEP_NIGHTLY_COUNT=3   # dated history tags to keep per version (floating tag is
 PUSH_RETRIES=3         # number of push attempts before giving up
 PUSH_RETRY_DELAY=30    # seconds to wait between push retries
 
+# Component version tracking. The manifest records the component versions and
+# Dockerfile hashes of the last successful build; when nothing changed, the
+# nightly build is skipped entirely.
+VERSIONS_FILE="component-versions.json"
+VERSIONS_AUTOCOMMIT=true   # git commit+push the updated manifest after a successful run
+
 # Local registry (optional). Set to host:port to push there after DockerHub.
 # Leave empty to skip. Example: LOCAL_REGISTRY="distribution.cs.queensu.ca:5000"
 LOCAL_REGISTRY=""
@@ -35,7 +41,6 @@ TO_EMAIL="aaron.visser+lobot@queensu.ca,whb1+lobot@queensu.ca"
 
 LOG_FILE="/tmp/build_push_qscimages_$$.log"
 BUILD_DATE=$(date '+%Y%m%d')
-CACHE_BUST=$(date '+%s')   # unique per run — always busts post-CACHE_BUST layers
 
 for arg in "$@"; do
     case $arg in
@@ -354,6 +359,89 @@ fi
 BUILT_TAGS=()
 FAILED=false
 
+# ── Component version resolution ──────────────────────────────────────────────
+# Latest upstream versions are resolved once per run, compared against
+# $VERSIONS_FILE, and passed to docker build as --build-arg. A Dockerfile's
+# nightly is skipped when neither the component versions nor the Dockerfile
+# itself changed since the last recorded build.
+
+COMPONENT_BUILD_ARGS=()
+NIGHTLY_VERDICTS=""
+VERSIONS_CHANGED=false
+NEW_VERSIONS=""
+
+verdict_for() {
+    echo "$NIGHTLY_VERDICTS" | awk -v f="$1" '$1 == f {print $2}'
+}
+
+if [ "$PUSH_ONLY" != "true" ]; then
+    log "--- Resolving component versions ---"
+    if ! NEW_VERSIONS=$(python3 resolve_component_versions.py 2>>"$LOG_FILE"); then
+        log "❌ ERROR: component version resolution failed — see log for details"
+        BODY_TMP=$(mktemp)
+        build_email_body "failure" > "$BODY_TMP"
+        send_email "❌ QSC image build FAILED | $(date '+%Y-%m-%d')" "$BODY_TMP"
+        rm -f "$LOG_FILE"
+        exit 1
+    fi
+    log "$NEW_VERSIONS"
+
+    CHECK_OUTPUT=$(python3 - "$VERSIONS_FILE" "$NEW_VERSIONS" $DOCKERFILES <<'PYEOF'
+import hashlib, json, os, sys
+
+versions_file = sys.argv[1]
+new = json.loads(sys.argv[2])
+dockerfiles = sys.argv[3:]
+
+ARG_NAMES = {
+    "selenium": "SELENIUM_VERSION",
+    "vscode": "VSCODE_VERSION",
+    "code_server": "CODE_SERVER_VERSION",
+    "chrome": "CHROME_VERSION",
+    "chromedriver": "CHROMEDRIVER_VERSION",
+    "ollama": "OLLAMA_VERSION",
+    "opencode": "OPENCODE_VERSION",
+    "uv": "UV_VERSION",
+    "claude_code": "CLAUDE_CODE_VERSION",
+}
+
+old = {}
+if os.path.exists(versions_file):
+    with open(versions_file) as f:
+        old = json.load(f)
+old_components = old.get("components", {})
+old_hashes = old.get("dockerfiles", {})
+
+components_changed = False
+for name, version in new.items():
+    print(f"ARG {ARG_NAMES[name]}={version}")
+    previous = old_components.get(name)
+    if previous != version:
+        components_changed = True
+        print(f"DIFF {name} {previous or '(new)'} {version}")
+
+for path in dockerfiles:
+    base = os.path.basename(path)
+    with open(path, "rb") as f:
+        digest = hashlib.sha256(f.read()).hexdigest()
+    changed = components_changed or old_hashes.get(base) != digest
+    print(f"VERDICT {base} {'BUILD' if changed else 'SKIP'}")
+PYEOF
+    )
+
+    while IFS=' ' read -r kind a b c; do
+        case "$kind" in
+            ARG)     COMPONENT_BUILD_ARGS+=(--build-arg "$a") ;;
+            DIFF)    VERSIONS_CHANGED=true; log "🔄 ${a}: ${b} → ${c}" ;;
+            VERDICT) NIGHTLY_VERDICTS="${NIGHTLY_VERDICTS}${a} ${b}"$'\n' ;;
+        esac
+    done <<< "$CHECK_OUTPUT"
+
+    if [ "$VERSIONS_CHANGED" != "true" ]; then
+        log "No component version changes since the last recorded build."
+    fi
+fi
+
 for DOCKERFILE in $DOCKERFILES; do
     DATE=$(basename "$DOCKERFILE" | grep -oE '[0-9]{8}')
     CUDA=$(grep -v '^[[:space:]]*#' "$DOCKERFILE" | grep -oE 'nvidia/cuda:[0-9]+\.[0-9]+\.[0-9]+' | head -1 | cut -d: -f2)
@@ -406,7 +494,7 @@ for DOCKERFILE in $DOCKERFILES; do
             elif docker image inspect "$BASELINE_TAG" > /dev/null 2>&1 && [ "$FORCE_BASELINE" != "true" ]; then
                 log "[dry-run] baseline already exists — would skip (use --force-baseline to rebuild): $BASELINE_TAG"
             else
-                log "[dry-run] docker build --platform=linux/amd64 -f $DOCKERFILE -t $BASELINE_TAG .build/"
+                log "[dry-run] docker build --platform=linux/amd64 ${COMPONENT_BUILD_ARGS[*]:-} -f $DOCKERFILE -t $BASELINE_TAG .build/"
             fi
             if [ "$PUSH_DOCKERHUB" = "true" ]; then
                 log "[dry-run] docker push $BASELINE_TAG"
@@ -414,34 +502,39 @@ for DOCKERFILE in $DOCKERFILES; do
             if [ -n "$LOCAL_REGISTRY" ]; then
                 log "[dry-run] docker push $LOCAL_BASELINE_TAG"
             fi
+            BUILT_TAGS+=("$BASELINE_TAG")
+            [ -n "$LOCAL_REGISTRY" ] && BUILT_TAGS+=("$LOCAL_BASELINE_TAG")
         fi
 
         # ── Nightly dry-run ──
         if [ "$BASELINE_ONLY" != "true" ]; then
-            if [ "$PUSH_ONLY" = "true" ]; then
-                log "[dry-run] skipping nightly build (--push-only) — would use existing: $FLOATING_TAG"
-            elif docker image inspect "$DATED_TAG" > /dev/null 2>&1 && [ "$FORCE_BUILD" != "true" ]; then
-                log "[dry-run] today's nightly already exists — would skip (use --force to rebuild): $DATED_TAG"
+            if [ "$(verdict_for "$(basename "$DOCKERFILE")")" = "SKIP" ] && [ "$FORCE_BUILD" != "true" ] && [ "$PUSH_ONLY" != "true" ]; then
+                log "[dry-run] no component or Dockerfile changes — would skip nightly (use --force to rebuild): $FLOATING_TAG"
             else
-                log "[dry-run] docker build --platform=linux/amd64 --build-arg CACHE_BUST=$CACHE_BUST -f $DOCKERFILE -t $FLOATING_TAG .build/"
-            fi
-            log "[dry-run] docker tag $FLOATING_TAG $DATED_TAG"
-            if [ "$PUSH_DOCKERHUB" = "true" ]; then
-                log "[dry-run] docker push $FLOATING_TAG"
-                log "[dry-run] docker push $DATED_TAG"
-                log "[dry-run] prune dated tags: keep $KEEP_NIGHTLY_COUNT for *-${DATE}-nightly-*"
-                log "[dry-run] prune local dated images for *-${DATE}-nightly-*"
-            else
-                log "[dry-run] skipping DockerHub push (--no-dockerhub)"
-            fi
-            if [ -n "$LOCAL_REGISTRY" ]; then
-                log "[dry-run] docker push $LOCAL_FLOATING_TAG"
-                log "[dry-run] docker push $LOCAL_DATED_TAG"
+                if [ "$PUSH_ONLY" = "true" ]; then
+                    log "[dry-run] skipping nightly build (--push-only) — would use existing: $FLOATING_TAG"
+                elif docker image inspect "$DATED_TAG" > /dev/null 2>&1 && [ "$FORCE_BUILD" != "true" ]; then
+                    log "[dry-run] today's nightly already exists — would skip (use --force to rebuild): $DATED_TAG"
+                else
+                    log "[dry-run] docker build --platform=linux/amd64 ${COMPONENT_BUILD_ARGS[*]:-} -f $DOCKERFILE -t $FLOATING_TAG .build/"
+                fi
+                log "[dry-run] docker tag $FLOATING_TAG $DATED_TAG"
+                if [ "$PUSH_DOCKERHUB" = "true" ]; then
+                    log "[dry-run] docker push $FLOATING_TAG"
+                    log "[dry-run] docker push $DATED_TAG"
+                    log "[dry-run] prune dated tags: keep $KEEP_NIGHTLY_COUNT for *-${DATE}-nightly-*"
+                    log "[dry-run] prune local dated images for *-${DATE}-nightly-*"
+                else
+                    log "[dry-run] skipping DockerHub push (--no-dockerhub)"
+                fi
+                if [ -n "$LOCAL_REGISTRY" ]; then
+                    log "[dry-run] docker push $LOCAL_FLOATING_TAG"
+                    log "[dry-run] docker push $LOCAL_DATED_TAG"
+                fi
+                BUILT_TAGS+=("$FLOATING_TAG" "$DATED_TAG")
+                [ -n "$LOCAL_REGISTRY" ] && BUILT_TAGS+=("$LOCAL_FLOATING_TAG" "$LOCAL_DATED_TAG")
             fi
         fi
-
-        BUILT_TAGS+=("$BASELINE_TAG" "$FLOATING_TAG" "$DATED_TAG")
-        [ -n "$LOCAL_REGISTRY" ] && BUILT_TAGS+=("$LOCAL_BASELINE_TAG" "$LOCAL_FLOATING_TAG" "$LOCAL_DATED_TAG")
 
     else
 
@@ -460,7 +553,7 @@ for DOCKERFILE in $DOCKERFILES; do
                 BASELINE_OK=true
             else
                 BUILD_START=$(date +%s)
-                if docker build --platform=linux/amd64 -f "$DOCKERFILE" -t "$BASELINE_TAG" .build/ 2>&1 | tee -a "$LOG_FILE"; then
+                if docker build --platform=linux/amd64 "${COMPONENT_BUILD_ARGS[@]}" -f "$DOCKERFILE" -t "$BASELINE_TAG" .build/ 2>&1 | tee -a "$LOG_FILE"; then
                     log "⏱  Baseline build time: $(format_duration $(( $(date +%s) - BUILD_START )))"
                     BASELINE_OK=true
                 else
@@ -502,6 +595,10 @@ for DOCKERFILE in $DOCKERFILES; do
 
         # ── Nightly phase ─────────────────────────────────────────────────────
         if [ "$BASELINE_ONLY" != "true" ]; then
+            # Skip when neither component versions nor this Dockerfile changed
+            if [ "$(verdict_for "$(basename "$DOCKERFILE")")" = "SKIP" ] && [ "$FORCE_BUILD" != "true" ] && [ "$PUSH_ONLY" != "true" ]; then
+            log "⏭️  No component or Dockerfile changes since last build — skipping nightly (use --force to rebuild): $FLOATING_TAG"
+            else
             BUILD_START=$(date +%s)
             BUILD_OK=false
             if [ "$PUSH_ONLY" = "true" ]; then
@@ -516,7 +613,7 @@ for DOCKERFILE in $DOCKERFILES; do
             elif docker image inspect "$DATED_TAG" > /dev/null 2>&1 && [ "$FORCE_BUILD" != "true" ]; then
                 log "⏭️  Today's nightly already exists — skipping (use --force to rebuild): $DATED_TAG"
                 BUILD_OK=true
-            elif docker build --platform=linux/amd64 --build-arg CACHE_BUST="$CACHE_BUST" -f "$DOCKERFILE" -t "$FLOATING_TAG" .build/ 2>&1 | tee -a "$LOG_FILE"; then
+            elif docker build --platform=linux/amd64 "${COMPONENT_BUILD_ARGS[@]}" -f "$DOCKERFILE" -t "$FLOATING_TAG" .build/ 2>&1 | tee -a "$LOG_FILE"; then
                 log "⏱  Nightly build time: $(format_duration $(( $(date +%s) - BUILD_START )))"
                 docker tag "$FLOATING_TAG" "$DATED_TAG"
                 BUILD_OK=true
@@ -565,6 +662,7 @@ for DOCKERFILE in $DOCKERFILES; do
                     fi
                 fi
             fi
+            fi   # end skip-verdict else
         fi
 
     fi
@@ -587,8 +685,43 @@ else
     log "✅ All builds complete."
     log "⏱  Total time: $(format_duration $(( $(date +%s) - SCRIPT_START )))"
     log "=========================================="
+
+    # Record the component versions + Dockerfile hashes this run built, so the
+    # next run can skip when nothing changed. Only after a fully successful
+    # DockerHub run — a failed run keeps the old manifest and retries tomorrow.
+    if [ "$DRY_RUN" != "true" ] && [ "$PUSH_ONLY" != "true" ] && [ "$BASELINE_ONLY" != "true" ] \
+        && [ "$PUSH_DOCKERHUB" = "true" ] && [ -n "$NEW_VERSIONS" ] && [ ${#BUILT_TAGS[@]} -gt 0 ]; then
+        python3 - "$VERSIONS_FILE" "$NEW_VERSIONS" "$BUILD_DATE" $DOCKERFILES <<'PYEOF'
+import hashlib, json, os, sys
+path, new, build_date = sys.argv[1], json.loads(sys.argv[2]), sys.argv[3]
+data = {"build_date": build_date, "components": new, "dockerfiles": {}}
+for df in sys.argv[4:]:
+    with open(df, "rb") as f:
+        data["dockerfiles"][os.path.basename(df)] = hashlib.sha256(f.read()).hexdigest()
+with open(path, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+PYEOF
+        log "📝 Updated ${VERSIONS_FILE}"
+        if [ "$VERSIONS_AUTOCOMMIT" = "true" ]; then
+            if { git add "$VERSIONS_FILE" \
+                && git -c user.name="QSC Image Builder" -c user.email="${FROM_EMAIL}" \
+                    commit -m "chore: component versions $(date '+%Y-%m-%d')" \
+                && git push; } >> "$LOG_FILE" 2>&1; then
+                log "📤 Committed and pushed ${VERSIONS_FILE}"
+            else
+                log "⚠️  Could not commit/push ${VERSIONS_FILE} (non-fatal — commit it manually)"
+            fi
+        fi
+    fi
+
+    if [ ${#BUILT_TAGS[@]} -eq 0 ]; then
+        SUBJECT="✅ QSC image build | $(date '+%Y-%m-%d') | no changes — nothing built"
+    else
+        SUBJECT="✅ QSC image build complete | $(date '+%Y-%m-%d') | ${#BUILT_TAGS[@]} tag(s)"
+    fi
     BODY_TMP=$(mktemp)
-    build_email_body "success" "${BUILT_TAGS[@]}" > "$BODY_TMP"
-    send_email "✅ QSC image build complete | $(date '+%Y-%m-%d') | $((${#BUILT_TAGS[@]})) tag(s)" "$BODY_TMP"
+    build_email_body "success" ${BUILT_TAGS[@]:+"${BUILT_TAGS[@]}"} > "$BODY_TMP"
+    send_email "$SUBJECT" "$BODY_TMP"
     rm -f "$LOG_FILE"
 fi

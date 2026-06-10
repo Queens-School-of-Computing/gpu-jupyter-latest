@@ -814,41 +814,31 @@ RUN pip install --root-user-action ignore --no-cache-dir \
 
 ENV NODE_OPTIONS=
 
-# --- Bust cache here for nightly-fresh content ---
-ARG CACHE_BUST=1
+# ── Nightly-refreshed components ─────────────────────────────────────────────
+# Each component pins its version with a build arg, resolved upstream by
+# resolve_component_versions.py and passed in by build_push_qscimages.sh.
+# A layer rebuilds only when its version changes; because every layer below a
+# changed layer also rebuilds, components are ordered least → most frequently
+# updated. The ARG defaults are a snapshot (2026-06-10) so manual no-arg
+# builds still work — the build script always overrides them.
 
-USER root
-
-# Chrome + ChromeDriver
-RUN wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb -O /tmp/google-chrome-stable_current_amd64.deb \
-    && apt-get install -y /tmp/google-chrome-stable_current_amd64.deb \
-    && rm /tmp/google-chrome-stable_current_amd64.deb \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# ChromeDriver major version must match the Chrome installed above
-RUN mkdir -p /chromedriver \
-    && CHROME_MAJOR=$(google-chrome --version | grep -oE '[0-9]+' | head -1) \
-    && DRIVER_VERSION=$(wget -qO- "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_${CHROME_MAJOR}") \
-    && wget -q "https://storage.googleapis.com/chrome-for-testing-public/${DRIVER_VERSION}/linux64/chromedriver-linux64.zip" -O /tmp/chromedriver-linux64.zip \
-    && unzip /tmp/chromedriver-linux64.zip -d /tmp/ \
-    && cp /tmp/chromedriver-linux64/chromedriver /chromedriver/ \
-    && rm -rf /tmp/chromedriver-linux64.zip /tmp/chromedriver-linux64
-
-ENV PATH "$PATH:/chromedriver"
-
+# selenium (PyVirtualDisplay rides along)
 USER $NB_UID
-RUN pip install --root-user-action ignore --no-cache-dir selenium PyVirtualDisplay \
+ARG SELENIUM_VERSION=4.44.0
+RUN pip install --root-user-action ignore --no-cache-dir "selenium==${SELENIUM_VERSION}" PyVirtualDisplay \
     && fix-permissions "${CONDA_DIR}" \
     && fix-permissions "/home/${NB_USER}"
 
 # VS Code (desktop)
 USER root
-RUN wget -q 'https://update.code.visualstudio.com/latest/linux-deb-x64/stable' -O /tmp/code.deb \
+ARG VSCODE_VERSION=1.124.0
+RUN wget -q "https://update.code.visualstudio.com/${VSCODE_VERSION}/linux-deb-x64/stable" -O /tmp/code.deb \
     && dpkg -i /tmp/code.deb \
     && rm /tmp/code.deb
 
 # code-server + Python extension (Open VSX with retry, MS marketplace fallback)
-RUN curl -fsSL https://code-server.dev/install.sh | sh \
+ARG CODE_SERVER_VERSION=4.123.0
+RUN curl -fsSL https://code-server.dev/install.sh | sh -s -- --version "${CODE_SERVER_VERSION}" \
     && ( \
          for i in 1 2 3; do \
            code-server --install-extension ms-python.python && exit 0; \
@@ -864,26 +854,51 @@ RUN curl -fsSL https://code-server.dev/install.sh | sh \
          && rm -f /tmp/ms-python.vsix \
        )
 
+# Chrome + ChromeDriver — versions resolved together from the chrome-for-testing
+# API so they always match. Google only ships the current stable deb, so
+# CHROME_VERSION is the cache key that equals it at build time.
+ARG CHROME_VERSION=149.0.7827.55
+RUN echo "Chrome ${CHROME_VERSION}" \
+    && wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb -O /tmp/google-chrome-stable_current_amd64.deb \
+    && apt-get install -y /tmp/google-chrome-stable_current_amd64.deb \
+    && rm /tmp/google-chrome-stable_current_amd64.deb \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+ARG CHROMEDRIVER_VERSION=149.0.7827.55
+RUN mkdir -p /chromedriver \
+    && wget -q "https://storage.googleapis.com/chrome-for-testing-public/${CHROMEDRIVER_VERSION}/linux64/chromedriver-linux64.zip" -O /tmp/chromedriver-linux64.zip \
+    && unzip /tmp/chromedriver-linux64.zip -d /tmp/ \
+    && cp /tmp/chromedriver-linux64/chromedriver /chromedriver/ \
+    && rm -rf /tmp/chromedriver-linux64.zip /tmp/chromedriver-linux64
+
+ENV PATH="${PATH}:/chromedriver"
+
 # Ollama
-RUN curl -fsSL https://ollama.com/install.sh | sh
+ARG OLLAMA_VERSION=0.30.7
+RUN curl -fsSL https://ollama.com/install.sh | OLLAMA_VERSION="${OLLAMA_VERSION}" sh
 
-# Claude Code
-RUN npm install -g @anthropic-ai/claude-code
-
-# Fix $HOME ownership after all root installs that may touch it
-RUN chown -R $NB_UID:$NB_GID $HOME
-
-# uv
-USER $NB_UID
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# opencode — patch install script to use /usr/local/bin (OPENCODE_INSTALL_DIR env var is broken upstream)
-USER root
-RUN curl -fsSL https://opencode.ai/install > /tmp/install-opencode.sh \
+# opencode — patch install script to use /usr/local/bin (OPENCODE_INSTALL_DIR
+# env var is broken upstream). The installer has no version pin, so
+# OPENCODE_VERSION is the cache key that equals the latest release.
+ARG OPENCODE_VERSION=1.17.1
+RUN echo "opencode ${OPENCODE_VERSION}" \
+    && curl -fsSL https://opencode.ai/install > /tmp/install-opencode.sh \
     && sed -i 's|INSTALL_DIR=$HOME/.opencode/bin|INSTALL_DIR=/usr/local/bin|' /tmp/install-opencode.sh \
     && bash /tmp/install-opencode.sh \
     && rm /tmp/install-opencode.sh
 
+# uv
+USER $NB_UID
+ARG UV_VERSION=0.11.19
+RUN curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | sh
+
+# Claude Code — updates most frequently, keep at the bottom
+USER root
+ARG CLAUDE_CODE_VERSION=2.1.170
+RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+
+# Fix $HOME ownership after all root installs that may touch it
+RUN chown -R $NB_UID:$NB_GID $HOME
 
 RUN update-alternatives --install /usr/bin/x-www-browser x-www-browser /usr/bin/google-chrome 500 \
     && update-alternatives --set x-www-browser /usr/bin/google-chrome
