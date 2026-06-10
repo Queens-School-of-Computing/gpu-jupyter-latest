@@ -887,13 +887,13 @@ RUN echo "opencode ${OPENCODE_VERSION}" \
     && bash /tmp/install-opencode.sh \
     && rm /tmp/install-opencode.sh
 
-# uv
-USER $NB_UID
+# uv — system-wide install as root; must not write to $HOME, whose ownership
+# is only fixed by the chown below after all root installs
 ARG UV_VERSION=0.11.19
-RUN curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | sh
+RUN curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" \
+    | env UV_INSTALL_DIR="/usr/local/bin" UV_NO_MODIFY_PATH=1 sh
 
 # Claude Code — updates most frequently, keep at the bottom
-USER root
 ARG CLAUDE_CODE_VERSION=2.1.170
 RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
 
