@@ -1,0 +1,211 @@
+{
+  "entries": [
+    {
+      "build_date": "20260611",
+      "timestamp": "2026-06-11T16:50:45+00:00",
+      "builds": [
+        {
+          "image": "20260313",
+          "type": "full-nightly",
+          "status": "success",
+          "duration_seconds": 4815,
+          "tag": "queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly-20260611"
+        },
+        {
+          "image": "20260424",
+          "type": "full-nightly",
+          "status": "success",
+          "duration_seconds": 4043,
+          "tag": "queensschoolofcomputingdocker/gpu-jupyter-latest:13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424-nightly-20260611"
+        }
+      ],
+      "warnings": 200,
+      "changes": {
+        "matlab": [
+          null,
+          "R2024b"
+        ],
+        "jupyterlab_git": [
+          null,
+          "0.51.3"
+        ],
+        "plotly": [
+          null,
+          "5.24.1"
+        ],
+        "ipyleaflet": [
+          null,
+          "0.19.2"
+        ],
+        "ipywidgets": [
+          null,
+          "8.1.5"
+        ],
+        "jupyterlab_spellchecker": [
+          null,
+          "0.8.4"
+        ],
+        "turbovnc": [
+          null,
+          "3.3"
+        ],
+        "selenium (full nightly)": [
+          null,
+          "4.44.0"
+        ],
+        "vscode (full nightly)": [
+          null,
+          "1.124.0"
+        ],
+        "code_server (full nightly)": [
+          null,
+          "4.123.0"
+        ],
+        "chrome (full nightly)": [
+          null,
+          "149.0.7827.55"
+        ],
+        "chromedriver (full nightly)": [
+          null,
+          "149.0.7827.55"
+        ],
+        "ollama (full nightly)": [
+          null,
+          "0.30.7"
+        ],
+        "opencode (full nightly)": [
+          null,
+          "1.17.3"
+        ],
+        "uv (full nightly)": [
+          null,
+          "0.11.20"
+        ],
+        "claude_code (full nightly)": [
+          null,
+          "2.1.173"
+        ]
+      },
+      "components": {
+        "nightly": {
+          "selenium": "4.44.0",
+          "vscode": "1.124.0",
+          "code_server": "4.123.0",
+          "chrome": "149.0.7827.55",
+          "chromedriver": "149.0.7827.55",
+          "ollama": "0.30.7",
+          "opencode": "1.17.3",
+          "uv": "0.11.20",
+          "claude_code": "2.1.173"
+        },
+        "pinned_common": {
+          "matlab": "R2024b",
+          "jupyterlab_git": "0.51.3",
+          "plotly": "5.24.1",
+          "ipyleaflet": "0.19.2",
+          "ipywidgets": "8.1.5",
+          "jupyterlab_spellchecker": "0.8.4",
+          "turbovnc": "3.3"
+        },
+        "images": {
+          "20260313": {
+            "cuda": "13.0.2",
+            "ubuntu": "24.04",
+            "python": "3.12",
+            "tensorflow": "2.20.0",
+            "keras": "3.13.0",
+            "pytorch": "2.9.1",
+            "torchvision": "0.24.1",
+            "torchaudio": "2.9.1",
+            "torch_cuda_line": "cu126",
+            "tag": "queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313"
+          },
+          "20260424": {
+            "cuda": "13.2.1",
+            "ubuntu": "24.04",
+            "python": "3.12",
+            "tensorflow": "2.20.0",
+            "keras": "3.13.0",
+            "pytorch": "2.11.0",
+            "torchvision": "0.26.0",
+            "torchaudio": "2.11.0",
+            "torch_cuda_line": "cu126",
+            "tag": "queensschoolofcomputingdocker/gpu-jupyter-latest:13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424"
+          }
+        },
+        "full_nightly": {
+          "selenium": "4.44.0",
+          "vscode": "1.124.0",
+          "code_server": "4.123.0",
+          "chrome": "149.0.7827.55",
+          "chromedriver": "149.0.7827.55",
+          "ollama": "0.30.7",
+          "opencode": "1.17.3",
+          "uv": "0.11.20",
+          "claude_code": "2.1.173"
+        }
+      },
+      "base_images": [
+        "docker.io/nvidia/cuda:13.0.2-cudnn-runtime-ubuntu24.04",
+        "docker.io/nvidia/cuda:13.2.1-cudnn-runtime-ubuntu24.04"
+      ],
+      "layers": {},
+      "known_issues": [
+        {
+          "component": "chrome",
+          "version": "149.0.7827.55",
+          "url": "https://chromereleases.googleblog.com/search/label/Stable%20updates",
+          "notes": "see Chrome stable release blog"
+        },
+        {
+          "component": "chromedriver",
+          "version": "149.0.7827.55",
+          "url": "https://chromereleases.googleblog.com/search/label/Stable%20updates",
+          "notes": "see Chrome stable release blog"
+        },
+        {
+          "component": "claude_code",
+          "version": "2.1.173",
+          "url": "https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md",
+          "notes": "see changelog entry (no known-issues section)"
+        },
+        {
+          "component": "code_server",
+          "version": "4.123.0",
+          "url": "https://github.com/coder/code-server/releases/tag/v4.123.0",
+          "notes": "none listed in release notes"
+        },
+        {
+          "component": "ollama",
+          "version": "0.30.7",
+          "url": "https://github.com/ollama/ollama/releases/tag/v0.30.7",
+          "notes": "none listed in release notes"
+        },
+        {
+          "component": "opencode",
+          "version": "1.17.3",
+          "url": "https://github.com/anomalyco/opencode/releases/tag/v1.17.3",
+          "notes": "none listed in release notes"
+        },
+        {
+          "component": "selenium",
+          "version": "4.44.0",
+          "url": "https://github.com/SeleniumHQ/selenium/releases/tag/selenium-4.44.0",
+          "notes": "none listed in release notes"
+        },
+        {
+          "component": "uv",
+          "version": "0.11.20",
+          "url": "https://github.com/astral-sh/uv/releases/tag/0.11.20",
+          "notes": "none listed in release notes"
+        },
+        {
+          "component": "vscode",
+          "version": "1.124.0",
+          "url": "https://code.visualstudio.com/updates/v1_124",
+          "notes": "see VS Code release notes"
+        }
+      ]
+    }
+  ]
+}
