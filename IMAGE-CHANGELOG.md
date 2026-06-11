@@ -11,18 +11,8 @@ Build and deployment history for the Lobot JupyterLab images. See
 
 ## 2026-06-11
 
-**Build:** 20260313 full-nightly ✅ 1h 20m · 20260424 full-nightly ✅ 1h 7m — warnings in build log: 200
-**Changed:** `chrome (full nightly)` (new) → 149.0.7827.55 · `chromedriver (full nightly)` (new) → 149.0.7827.55 · `claude_code (full nightly)` (new) → 2.1.173 · `code_server (full nightly)` (new) → 4.123.0 · `ipyleaflet` (new) → 0.19.2 · `ipywidgets` (new) → 8.1.5 · `jupyterlab_git` (new) → 0.51.3 · `jupyterlab_spellchecker` (new) → 0.8.4 · `matlab` (new) → R2024b · `ollama (full nightly)` (new) → 0.30.7 · `opencode (full nightly)` (new) → 1.17.3 · `plotly` (new) → 5.24.1 · `selenium (full nightly)` (new) → 4.44.0 · `turbovnc` (new) → 3.3 · `uv (full nightly)` (new) → 0.11.20 · `vscode (full nightly)` (new) → 1.124.0
-**Known issues (for the versions in this build):**
-- `chrome` 149.0.7827.55 — [release notes](https://chromereleases.googleblog.com/search/label/Stable%20updates) — see Chrome stable release blog
-- `chromedriver` 149.0.7827.55 — [release notes](https://chromereleases.googleblog.com/search/label/Stable%20updates) — see Chrome stable release blog
-- `claude_code` 2.1.173 — [release notes](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md) — see changelog entry (no known-issues section)
-- `code_server` 4.123.0 — [release notes](https://github.com/coder/code-server/releases/tag/v4.123.0) — none listed in release notes
-- `ollama` 0.30.7 — [release notes](https://github.com/ollama/ollama/releases/tag/v0.30.7) — none listed in release notes
-- `opencode` 1.17.3 — [release notes](https://github.com/anomalyco/opencode/releases/tag/v1.17.3) — none listed in release notes
-- `selenium` 4.44.0 — [release notes](https://github.com/SeleniumHQ/selenium/releases/tag/selenium-4.44.0) — none listed in release notes
-- `uv` 0.11.20 — [release notes](https://github.com/astral-sh/uv/releases/tag/0.11.20) — none listed in release notes
-- `vscode` 1.124.0 — [release notes](https://code.visualstudio.com/updates/v1_124) — see VS Code release notes
+**Build:** 20260313 full-nightly ✅ 1h 5m · 20260424 full-nightly ❌ (log: `/tmp/build_push_qscimages_20260611_failed.log`) — warnings in build log: 139
+**Changed:** nothing — versions unchanged
 
 <details>
 <summary>Full component list (2026-06-11)</summary>
