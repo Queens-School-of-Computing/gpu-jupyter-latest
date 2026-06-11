@@ -65,14 +65,16 @@ if [ "$BASELINE_ONLY" = "true" ] && [ "$NIGHTLY_ONLY" = "true" ]; then
     exit 1
 fi
 
-# --full: the nightly builds with --no-cache so every layer refreshes (OS
-# packages, installers, ML stack re-fetch). Same tags — the full build IS that
-# night's nightly — recorded in the changelog as type "full-nightly".
+# --full: rebuilds every layer from scratch (--no-cache) and pushes to a
+# distinct ...-nightly-full / ...-nightly-full-YYYYMMDD tag lineage, leaving
+# the incremental -nightly tags untouched. Recorded as "full-nightly".
 NIGHTLY_BUILD_OPTS=()
 NIGHTLY_TYPE="nightly"
+NIGHTLY_TAG_SUFFIX="nightly"
 if [ "$FULL_BUILD" = "true" ]; then
     NIGHTLY_BUILD_OPTS=(--no-cache)
     NIGHTLY_TYPE="full-nightly"
+    NIGHTLY_TAG_SUFFIX="nightly-full"
 fi
 
 # ── Logging ────────────────────────────────────────────────────────────────────
@@ -119,9 +121,10 @@ format_duration() {
 
 prune_nightly_tags() {
     local DOCKERFILE_DATE="$1"   # e.g. 20260313 — used to scope which tags to prune
+    local TAG_SUFFIX="${2:-nightly}"   # nightly or nightly-full
 
     if [ "$DRY_RUN" = "true" ]; then
-        log "[dry-run] prune_nightly_tags: would keep $KEEP_NIGHTLY_COUNT dated tags for *-${DOCKERFILE_DATE}-nightly-*"
+        log "[dry-run] prune_nightly_tags: would keep $KEEP_NIGHTLY_COUNT dated tags for *-${DOCKERFILE_DATE}-${TAG_SUFFIX}-*"
         return 0
     fi
 
@@ -141,11 +144,12 @@ except ImportError:
     print("error: urllib not available")
     sys.exit(1)
 
-namespace = "${DOCKERHUB_USERNAME}"
-repo      = "gpu-jupyter-latest"
-password  = "${DOCKERHUB_PASSWORD}"
-keep      = ${KEEP_NIGHTLY_COUNT}
-df_date   = "${DOCKERFILE_DATE}"
+namespace  = "${DOCKERHUB_USERNAME}"
+repo       = "gpu-jupyter-latest"
+password   = "${DOCKERHUB_PASSWORD}"
+keep       = ${KEEP_NIGHTLY_COUNT}
+df_date    = "${DOCKERFILE_DATE}"
+tag_suffix = "${TAG_SUFFIX}"
 
 # 1. Login → JWT token
 try:
@@ -170,13 +174,13 @@ except Exception as e:
     print(f"error: could not list tags: {e}")
     sys.exit(1)
 
-# 3. Filter to dated nightly tags for this Dockerfile version:
-#    pattern: *-{df_date}-nightly-YYYYMMDD
-pattern = re.compile(rf".*-{re.escape(df_date)}-nightly-(\d{{8}})$")
+# 3. Filter to dated tags for this Dockerfile version and tag suffix:
+#    pattern: *-{df_date}-{tag_suffix}-YYYYMMDD
+pattern = re.compile(rf".*-{re.escape(df_date)}-{re.escape(tag_suffix)}-(\d{{8}})$")
 dated = [(m.group(1), name) for name in all_tags if (m := pattern.match(name))]
 dated.sort(reverse=True)   # newest build date first
 
-print(f"Found {len(dated)} dated nightly tag(s) for {df_date}: {[t for _, t in dated]}")
+print(f"Found {len(dated)} dated {tag_suffix} tag(s) for {df_date}: {[t for _, t in dated]}")
 
 # 4. Delete everything beyond KEEP_NIGHTLY_COUNT
 to_delete = dated[keep:]
@@ -197,9 +201,9 @@ else:
 PYEOF
 
     if [ $? -eq 0 ]; then
-        log " 🗑  Tag pruning complete for ${DOCKERFILE_DATE}"
+        log " 🗑  Tag pruning complete for ${DOCKERFILE_DATE} (${TAG_SUFFIX})"
     else
-        log " ⚠️  Tag pruning failed for ${DOCKERFILE_DATE} (non-fatal)"
+        log " ⚠️  Tag pruning failed for ${DOCKERFILE_DATE} (${TAG_SUFFIX}) (non-fatal)"
     fi
 }
 
@@ -207,18 +211,19 @@ PYEOF
 
 prune_local_nightly_images() {
     local DOCKERFILE_DATE="$1"
+    local TAG_SUFFIX="${2:-nightly}"
 
     if [ "$DRY_RUN" = "true" ]; then
-        log "[dry-run] prune_local_nightly_images: would remove local dated images for *-${DOCKERFILE_DATE}-nightly-*"
+        log "[dry-run] prune_local_nightly_images: would remove local dated images for *-${DOCKERFILE_DATE}-${TAG_SUFFIX}-*"
         return 0
     fi
 
     local dated_images
     dated_images=$(docker images --format "{{.Repository}}:{{.Tag}}" \
-        | grep -E "^${REPO}:.*-${DOCKERFILE_DATE}-nightly-[0-9]{8}$" || true)
+        | grep -E "^${REPO}:.*-${DOCKERFILE_DATE}-${TAG_SUFFIX}-[0-9]{8}$" || true)
 
     if [ -z "$dated_images" ]; then
-        log "No local dated nightly images to prune for ${DOCKERFILE_DATE}"
+        log "No local dated ${TAG_SUFFIX} images to prune for ${DOCKERFILE_DATE}"
         return 0
     fi
 
@@ -356,7 +361,7 @@ if [ "$DRY_RUN" = "true" ]; then
 fi
 
 if [ "$FULL_BUILD" = "true" ]; then
-    log "=== FULL NIGHTLY — building with --no-cache (every layer refreshes) ==="
+    log "=== FULL NIGHTLY — --no-cache; pushing to ...-nightly-full tags ==="
 fi
 
 # Log in to local registry if configured
@@ -489,7 +494,7 @@ for DOCKERFILE in $DOCKERFILES; do
     BASELINE_SUFFIX="${CUDA}cudnn-${TF}tf-matlab-ollama-claude-qsc-u${UBUNTU}-${DATE}"
     BASELINE_TAG="${REPO}:${BASELINE_SUFFIX}"
 
-    IMAGE_SUFFIX="${BASELINE_SUFFIX}-nightly"
+    IMAGE_SUFFIX="${BASELINE_SUFFIX}-${NIGHTLY_TAG_SUFFIX}"
     FLOATING_TAG="${REPO}:${IMAGE_SUFFIX}"
     DATED_TAG="${FLOATING_TAG}-${BUILD_DATE}"
 
@@ -554,8 +559,8 @@ for DOCKERFILE in $DOCKERFILES; do
                 if [ "$PUSH_DOCKERHUB" = "true" ]; then
                     log "[dry-run] docker push $FLOATING_TAG"
                     log "[dry-run] docker push $DATED_TAG"
-                    log "[dry-run] prune dated tags: keep $KEEP_NIGHTLY_COUNT for *-${DATE}-nightly-*"
-                    log "[dry-run] prune local dated images for *-${DATE}-nightly-*"
+                    log "[dry-run] prune dated tags: keep $KEEP_NIGHTLY_COUNT for *-${DATE}-${NIGHTLY_TAG_SUFFIX}-*"
+                    log "[dry-run] prune local dated images for *-${DATE}-${NIGHTLY_TAG_SUFFIX}-*"
                 else
                     log "[dry-run] skipping DockerHub push (--no-dockerhub)"
                 fi
@@ -684,8 +689,8 @@ for DOCKERFILE in $DOCKERFILES; do
                         log "✅ Done: $FLOATING_TAG"
                         log "✅ Done: $DATED_TAG"
                         BUILT_TAGS+=("$FLOATING_TAG" "$DATED_TAG")
-                        prune_nightly_tags "$DATE" 2>&1 | tee -a "$LOG_FILE"
-                        prune_local_nightly_images "$DATE" 2>&1 | tee -a "$LOG_FILE"
+                        prune_nightly_tags "$DATE" "$NIGHTLY_TAG_SUFFIX" 2>&1 | tee -a "$LOG_FILE"
+                        prune_local_nightly_images "$DATE" "$NIGHTLY_TAG_SUFFIX" 2>&1 | tee -a "$LOG_FILE"
                     else
                         log "❌ Push failed for $FLOATING_TAG / $DATED_TAG"
                         NIGHTLY_STATUS=failed

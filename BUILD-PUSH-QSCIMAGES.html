@@ -131,22 +131,26 @@ LOCAL_REGISTRY_USERNAME="admin"</code></pre>
 <p>If any version cannot be extracted the Dockerfile is skipped with an error.</p>
 <hr />
 <h2>Tag Strategy</h2>
-<p>Each Dockerfile version produces <strong>three tags</strong>:</p>
+<p>Each Dockerfile version produces <strong>five tags</strong> across two distinct nightly lineages:</p>
 <table>
 <thead>
-<tr><th>Tag</th><th>Format</th><th>Purpose</th></tr>
+<tr><th>Tag</th><th>Format</th><th>Pushed by</th><th>Purpose</th></tr>
 </thead>
 <tbody>
-<tr><td>Baseline</td><td><code>...-{DATE}</code></td><td>One-time stable build. Never rebuilt unless <code>--force-baseline</code>.</td></tr>
-<tr><td>Floating</td><td><code>...-{DATE}-nightly</code></td><td>Updated each night to the latest nightly build. HTML pages link to this tag.</td></tr>
-<tr><td>Dated</td><td><code>...-{DATE}-nightly-{BUILD_DATE}</code></td><td>History/rollback tag. Identifies exactly which night's build it is.</td></tr>
+<tr><td>Baseline</td><td><code>...-{DATE}</code></td><td><code>--baseline-only</code></td><td>One-time stable build. Never rebuilt unless <code>--force-baseline</code>.</td></tr>
+<tr><td>Nightly floating</td><td><code>...-{DATE}-nightly</code></td><td>incremental nightly</td><td>Updated each night (Mon–Sat) with the latest component changes.</td></tr>
+<tr><td>Nightly dated</td><td><code>...-{DATE}-nightly-{BUILD_DATE}</code></td><td>incremental nightly</td><td>History/rollback tag for the incremental build.</td></tr>
+<tr><td>Full-nightly floating</td><td><code>...-{DATE}-nightly-full</code></td><td><code>--full</code> nightly</td><td>Updated on full no-cache rebuilds (Sunday). Independent lineage.</td></tr>
+<tr><td>Full-nightly dated</td><td><code>...-{DATE}-nightly-full-{BUILD_DATE}</code></td><td><code>--full</code> nightly</td><td>History/rollback tag for the full rebuild.</td></tr>
 </tbody>
 </table>
-<p>Example from <code>Dockerfile.20260313</code>, built on 2026-04-30:</p>
+<p>Example from <code>Dockerfile.20260313</code>:</p>
 <pre><code>queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313
 queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly
-queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly-20260430</code></pre>
-<p>The baseline tag is the stable reference pulled to cluster nodes for initial setup. The floating tag is what JupyterHub HTML pages reference — no HTML edits are needed after each nightly build. The dated tag provides a rollback target if a build introduces a regression.</p>
+queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly-20260610
+queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly-full
+queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly-full-20260615</code></pre>
+<p>The <code>-nightly</code> and <code>-nightly-full</code> lineages are fully independent: an incremental build never touches <code>-nightly-full</code> tags, and a full rebuild never overwrites <code>-nightly</code> tags. Each lineage maintains its own set of pruned dated rollback tags (see <a href="#dockerhub-tag-pruning">DockerHub Tag Pruning</a>).</p>
 <hr />
 <h2 id="component-version-tracking">Component Version Tracking</h2>
 <p>The nightly build is <strong>version-driven</strong>: instead of force-refreshing layers on a timer, the script resolves the latest upstream version of each frequently-updated component and rebuilds only when something actually changed.</p>
@@ -218,7 +222,8 @@ queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-oll
 <pre><code>selenium → VS Code → code-server → Chrome → ChromeDriver → Ollama → opencode → uv → Claude Code</code></pre>
 <p>A Claude Code release (near-daily) rebuilds only the bottom of the stack; a selenium release (rare) rebuilds everything below it. The manifest's git history shows how often each component actually changes — use it to re-tune this order over time.</p>
 <h3 id="full-nightly">Full nightly</h3>
-<p>Component tracking only refreshes the nine managed layers — everything else (OS packages, the ML stack, MATLAB, xfce) stays cached from the baseline indefinitely. A <code>--full</code> run rebuilds the nightly with <code>--no-cache</code>, so every layer refreshes: <code>apt-get upgrade</code> picks up OS security updates, installers re-fetch, the pinned pip stack reinstalls. It then pushes the <strong>same</strong> floating/dated tags — the full build simply becomes that night's nightly — and subsequent incremental nightlies build on the refreshed layer cache.</p>
+<p>Component tracking only refreshes the nine managed layers — everything else (OS packages, the ML stack, MATLAB, xfce) stays cached from the baseline indefinitely. A <code>--full</code> run rebuilds the nightly with <code>--no-cache</code>, so every layer refreshes: <code>apt-get upgrade</code> picks up OS security updates, installers re-fetch, the pinned pip stack reinstalls.</p>
+<p><strong>A full build pushes to its own distinct tag lineage</strong> — <code>...-nightly-full</code> (floating) and <code>...-nightly-full-YYYYMMDD</code> (dated) — leaving the incremental <code>...-nightly</code> tags completely untouched. The two lineages are independent: the incremental nightly continues to build on its own cache, and the full rebuild stands as a separately addressable, ground-truth image. Subsequent incremental nightlies continue from the incremental baseline cache — not the full build's cache.</p>
 <p>A full run always builds (skip detection and the dated-tag check are bypassed). In the changelog its builds are typed <code>full-nightly</code>, and the manifest additionally records <code>full_components</code> — the component versions the last full rebuild shipped — carried forward between full runs so each one diffs against the previous full, not against "(new)". The baseline tag is unaffected; it remains the frozen rollback image.</p>
 <p>Recommended cadence: weekly via cron (see <a href="#automated-cron">Automated (cron)</a>), at the cost of one ~3-hour build.</p>
 <h3>Manifest auto-commit</h3>
@@ -257,24 +262,34 @@ queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-oll
 </tbody>
 </table>
 <hr />
-<h2>DockerHub Tag Pruning</h2>
-<p>After each successful nightly push, the script calls DockerHub's REST API to prune old dated tags for that Dockerfile version:</p>
+<h2 id="dockerhub-tag-pruning">DockerHub Tag Pruning</h2>
+<p>After each successful push, the script calls DockerHub's REST API to prune old dated tags for that Dockerfile version and tag lineage:</p>
 <ol>
 <li>Authenticates with DockerHub (JWT via <code>/v2/users/login</code>)</li>
 <li>Lists all tags for the repository</li>
-<li>Filters to dated tags matching <code>...-{DOCKERFILE_DATE}-nightly-YYYYMMDD</code> (baseline and floating tags are never touched)</li>
+<li>Filters to dated tags matching the current lineage suffix:
+  <ul>
+    <li>Incremental: <code>...-{DOCKERFILE_DATE}-nightly-YYYYMMDD</code></li>
+    <li>Full: <code>...-{DOCKERFILE_DATE}-nightly-full-YYYYMMDD</code></li>
+  </ul>
+  (Baseline and floating tags are never pruned)</li>
 <li>Sorts by build date, newest first</li>
 <li>Deletes any dated tags beyond <code>KEEP_NIGHTLY_COUNT</code></li>
 </ol>
-<p>With <code>KEEP_NIGHTLY_COUNT=3</code>, DockerHub holds (dated tags only appear on nights something actually changed — see <a href="#component-version-tracking">Component Version Tracking</a>):</p>
-<pre><code>...-20260313                      ← baseline, always present
-...-20260313-nightly              ← floating, always present
-...-20260313-nightly-20260610     ← most recent changed build
-...-20260313-nightly-20260608     ← previous
-...-20260313-nightly-20260605     ← previous</code></pre>
+<p>Each lineage is pruned independently — a full-nightly run never removes incremental dated tags, and vice versa.</p>
+<p>With <code>KEEP_NIGHTLY_COUNT=3</code>, DockerHub holds (dated tags only appear on nights when something actually changed — see <a href="#component-version-tracking">Component Version Tracking</a>):</p>
+<pre><code>...-20260313                           ← baseline, always present
+...-20260313-nightly                   ← incremental floating, always present
+...-20260313-nightly-20260614          ← most recent incremental build
+...-20260313-nightly-20260613          ← previous
+...-20260313-nightly-20260612          ← previous
+...-20260313-nightly-full              ← full-nightly floating, always present
+...-20260313-nightly-full-20260615     ← most recent full build (Sunday)
+...-20260313-nightly-full-20260608     ← previous Sunday
+...-20260313-nightly-full-20260601     ← previous Sunday</code></pre>
 <p>Pruning is skipped (with a warning) if <code>DOCKERHUB_PASSWORD</code> is not set.</p>
 <h3>Local image pruning</h3>
-<p>After a successful push, the build server also removes <strong>all</strong> of its local dated nightly images (<code>...-nightly-YYYYMMDD</code>) for that Dockerfile version — only DockerHub keeps the rollback history. The baseline and floating images stay local so layer caching keeps working.</p>
+<p>After a successful push, the build server also removes <strong>all</strong> of its local dated images for the active lineage and Dockerfile version — only DockerHub keeps the rollback history. Baseline and floating images stay local so layer caching keeps working.</p>
 <hr />
 <h2>Push Retry</h2>
 <p>Each <code>docker push</code> is wrapped in a retry loop. On a network timeout or proxy error, the script waits <code>PUSH_RETRY_DELAY</code> seconds and tries again, up to <code>PUSH_RETRIES</code> times. Each attempt is logged:</p>
@@ -295,7 +310,7 @@ queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-oll
 <tr><td><code>--baseline-only</code></td><td>Build and push baseline only; skip nightly</td></tr>
 <tr><td><code>--nightly-only</code></td><td>Skip baseline check entirely; build and push nightly only</td></tr>
 <tr><td><code>--force</code></td><td>Rebuild nightly even if nothing changed and/or today's dated tag already exists locally</td></tr>
-<tr><td><code>--full</code></td><td>Build the nightly with <code>--no-cache</code>: every layer refreshes (OS package updates, fresh installers, ML stack re-fetch). Same tags as a normal nightly; always builds (implies <code>--force</code>); recorded in the changelog as <code>full-nightly</code>. See <a href="#full-nightly">Full nightly</a>.</td></tr>
+<tr><td><code>--full</code></td><td>Build the nightly with <code>--no-cache</code>: every layer refreshes (OS package updates, fresh installers, ML stack re-fetch). Pushes to the distinct <code>...-nightly-full</code> / <code>...-nightly-full-YYYYMMDD</code> tag lineage; the <code>-nightly</code> tags are untouched. Always builds (implies <code>--force</code>). Recorded in the changelog as <code>full-nightly</code>. See <a href="#full-nightly">Full nightly</a>.</td></tr>
 <tr><td><code>--force-baseline</code></td><td>Rebuild baseline even if it already exists locally</td></tr>
 </tbody>
 </table>

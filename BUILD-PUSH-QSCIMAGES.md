@@ -234,26 +234,30 @@ If any version cannot be extracted the Dockerfile is skipped with an error.
 
 ## Tag Strategy
 
-Each Dockerfile version produces **three tags**:
+Each Dockerfile version produces **five tags** across two distinct nightly lineages:
 
-| Tag | Format | Purpose |
-|-----|--------|---------|
-| Baseline | `...-{DATE}` | One-time stable build. Never rebuilt unless `--force-baseline`. |
-| Floating | `...-{DATE}-nightly` | Updated each night to the latest nightly build. HTML pages link to this tag. |
-| Dated | `...-{DATE}-nightly-{BUILD_DATE}` | History/rollback tag. Identifies exactly which night's build it is. |
+| Tag | Format | Pushed by | Purpose |
+|-----|--------|-----------|---------|
+| Baseline | `...-{DATE}` | `--baseline-only` | One-time stable build. Never rebuilt unless `--force-baseline`. |
+| Nightly floating | `...-{DATE}-nightly` | incremental nightly | Updated each night (Mon–Sat) with the latest component changes. |
+| Nightly dated | `...-{DATE}-nightly-{BUILD_DATE}` | incremental nightly | History/rollback tag for the incremental build. |
+| Full-nightly floating | `...-{DATE}-nightly-full` | `--full` nightly | Updated on full no-cache rebuilds (Sunday). Independent lineage. |
+| Full-nightly dated | `...-{DATE}-nightly-full-{BUILD_DATE}` | `--full` nightly | History/rollback tag for the full rebuild. |
 
-Example from `Dockerfile.20260313`, built on 2026-04-30:
+Example from `Dockerfile.20260313`:
 
 ```
 queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313
 queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly
-queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly-20260430
+queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly-20260610
+queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly-full
+queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly-full-20260615
 ```
 
-The baseline tag is the stable reference pulled to cluster nodes for initial
-setup. The floating tag is what JupyterHub HTML pages reference — no HTML edits
-are needed after each nightly build. The dated tag provides a rollback target
-if a build introduces a regression.
+The `-nightly` and `-nightly-full` lineages are fully independent: an
+incremental build never touches `-nightly-full` tags, and a full rebuild never
+overwrites `-nightly` tags. Each lineage maintains its own set of pruned dated
+rollback tags (see [DockerHub Tag Pruning](#dockerhub-tag-pruning)).
 
 ---
 
@@ -376,9 +380,15 @@ Component tracking only refreshes the nine managed layers — everything else
 (OS packages, the ML stack, MATLAB, xfce) stays cached from the baseline
 indefinitely. A `--full` run rebuilds the nightly with `--no-cache`, so every
 layer refreshes: `apt-get upgrade` picks up OS security updates, installers
-re-fetch, the pinned pip stack reinstalls. It then pushes the **same**
-floating/dated tags — the full build simply becomes that night's nightly —
-and subsequent incremental nightlies build on the refreshed layer cache.
+re-fetch, the pinned pip stack reinstalls.
+
+**A full build pushes to its own distinct tag lineage** — `...-nightly-full`
+(floating) and `...-nightly-full-YYYYMMDD` (dated) — leaving the incremental
+`...-nightly` tags completely untouched. The two lineages are independent: the
+incremental nightly continues to build on its own cache, and the full rebuild
+stands as a separately addressable, ground-truth image. Subsequent incremental
+nightlies continue from the incremental baseline cache — not the full build's
+cache.
 
 A full run always builds (skip detection and the dated-tag check are
 bypassed). In the changelog its builds are typed `full-nightly`, and the
@@ -444,26 +454,35 @@ Helper scripts (stdlib-only, no pip dependencies):
 
 ## DockerHub Tag Pruning
 
-After each successful nightly push, the script calls DockerHub's REST API to
-prune old dated tags for that Dockerfile version:
+After each successful push, the script calls DockerHub's REST API to prune old
+dated tags for that Dockerfile version and tag lineage:
 
 1. Authenticates with DockerHub (JWT via `/v2/users/login`)
 2. Lists all tags for the repository
-3. Filters to dated tags matching `...-{DOCKERFILE_DATE}-nightly-YYYYMMDD`
-   (baseline and floating tags are never touched)
+3. Filters to dated tags matching the current lineage suffix:
+   - Incremental: `...-{DOCKERFILE_DATE}-nightly-YYYYMMDD`
+   - Full: `...-{DOCKERFILE_DATE}-nightly-full-YYYYMMDD`
+   (Baseline and floating tags are never pruned)
 4. Sorts by build date, newest first
 5. Deletes any dated tags beyond `KEEP_NIGHTLY_COUNT`
 
+Each lineage is pruned independently — a full-nightly run never removes
+incremental dated tags, and vice versa.
+
 With `KEEP_NIGHTLY_COUNT=3`, DockerHub holds (dated tags only appear on nights
-something actually changed — see
+when something actually changed — see
 [Component Version Tracking](#component-version-tracking)):
 
 ```
-...-20260313                      ← baseline, always present
-...-20260313-nightly              ← floating, always present
-...-20260313-nightly-20260610     ← most recent changed build
-...-20260313-nightly-20260608     ← previous
-...-20260313-nightly-20260605     ← previous
+...-20260313                           ← baseline, always present
+...-20260313-nightly                   ← incremental floating, always present
+...-20260313-nightly-20260614          ← most recent incremental build
+...-20260313-nightly-20260613          ← previous
+...-20260313-nightly-20260612          ← previous
+...-20260313-nightly-full              ← full-nightly floating, always present
+...-20260313-nightly-full-20260615     ← most recent full build (Sunday)
+...-20260313-nightly-full-20260608     ← previous Sunday
+...-20260313-nightly-full-20260601     ← previous Sunday
 ```
 
 Pruning is skipped (with a warning) if `DOCKERHUB_PASSWORD` is not set.
@@ -471,9 +490,9 @@ Pruning is skipped (with a warning) if `DOCKERHUB_PASSWORD` is not set.
 ### Local image pruning
 
 After a successful push, the build server also removes **all** of its local
-dated nightly images (`...-nightly-YYYYMMDD`) for that Dockerfile version —
-only DockerHub keeps the rollback history. The baseline and floating images
-stay local so layer caching keeps working.
+dated images for the active lineage and Dockerfile version — only DockerHub
+keeps the rollback history. Baseline and floating images stay local so layer
+caching keeps working.
 
 ---
 
@@ -506,7 +525,7 @@ If all retries fail, the tag is marked as failed and the email reports failure.
 | `--baseline-only` | Build and push baseline only; skip nightly |
 | `--nightly-only` | Skip baseline check entirely; build and push nightly only |
 | `--force` | Rebuild nightly even if nothing changed and/or today's dated tag already exists locally |
-| `--full` | Build the nightly with `--no-cache`: every layer refreshes (OS package updates, fresh installers, ML stack re-fetch). Same tags as a normal nightly; always builds (implies `--force`); recorded in the changelog as `full-nightly`. See [Full nightly](#full-nightly). |
+| `--full` | Build the nightly with `--no-cache`: every layer refreshes (OS package updates, fresh installers, ML stack re-fetch). Pushes to the distinct `...-nightly-full` / `...-nightly-full-YYYYMMDD` tag lineage; the `-nightly` tags are untouched. Always builds (implies `--force`). Recorded in the changelog as `full-nightly`. See [Full nightly](#full-nightly). |
 | `--force-baseline` | Rebuild baseline even if it already exists locally |
 
 `--baseline-only` and `--nightly-only` are mutually exclusive.
