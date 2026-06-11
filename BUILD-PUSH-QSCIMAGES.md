@@ -20,7 +20,10 @@ JupyterHub cluster. It handles two distinct build types per Dockerfile version:
 The script discovers all dated Dockerfiles in `.build/`, extracts version
 strings automatically, pushes tags to DockerHub (and optionally a local
 registry), prunes old dated nightly tags on DockerHub and locally, and emails
-a full build report including per-step timing.
+a full build report including per-step timing. Every run is also recorded in
+[IMAGE-CHANGELOG.md](IMAGE-CHANGELOG.md) — per-image build outcomes, version
+changes, known-issue links, and (once the control plane reports in) deploy
+stats (see [Build changelog](#build-changelog)).
 
 Designed to run on a dedicated build server with Docker and internet access.
 The build server does not need `kubectl` or cluster access — it only pushes to
@@ -275,16 +278,18 @@ frequently-updated component and rebuilds only when something actually changed.
    **Something changed →** the versions are passed to `docker build` as
    `--build-arg <COMPONENT>_VERSION=<version>` and only the layers from the
    first changed component downward are rebuilt.
-5. After every tag pushed successfully, the manifest is rewritten with the new
-   versions, the nightly date code, and the current Dockerfile hashes — and
-   committed/pushed to GitHub (`VERSIONS_AUTOCOMMIT=true`). A failed run keeps
-   the old manifest so the next run retries.
+5. After every tag pushed successfully, `update_image_metadata.py` rewrites
+   the manifest with the new versions, the nightly date code, and the current
+   Dockerfile hashes, records the run in the build changelog (see
+   [Build changelog](#build-changelog)), and commits/pushes both to GitHub
+   (`VERSIONS_AUTOCOMMIT=true`). A failed run keeps the old manifest so the
+   next run retries — but still records a changelog entry for the failure.
 
 ### The manifest
 
 ```json
 {
-  "build_date": "20260610",
+  "build_date": "20260611",
   "components": {
     "selenium": "4.44.0",
     "vscode": "1.124.0",
@@ -292,10 +297,27 @@ frequently-updated component and rebuilds only when something actually changed.
     "chrome": "149.0.7827.55",
     "chromedriver": "149.0.7827.55",
     "ollama": "0.30.7",
-    "opencode": "1.17.1",
-    "uv": "0.11.19",
-    "claude_code": "2.1.170"
+    "opencode": "1.17.3",
+    "uv": "0.11.20",
+    "claude_code": "2.1.173"
   },
+  "pinned_common": {
+    "matlab": "R2024b",
+    "turbovnc": "3.3",
+    "jupyterlab_git": "0.51.3",
+    "...": "..."
+  },
+  "images": {
+    "20260313": {
+      "cuda": "13.0.2",
+      "tensorflow": "2.20.0",
+      "pytorch": "2.9.1",
+      "...": "...",
+      "tag": "queensschoolofcomputingdocker/gpu-jupyter-latest:...-20260313"
+    },
+    "20260424": { "...": "..." }
+  },
+  "constraints": { "host_nvidia_driver": "580" },
   "dockerfiles": {
     "Dockerfile.20260313": "<sha256>",
     "Dockerfile.20260424": "<sha256>"
@@ -309,6 +331,12 @@ manifest is committed to GitHub on every change, its git history doubles as a
 changelog of what each nightly actually shipped, and the raw file can be
 fetched (e.g. by the JupyterHub spawn page's image selection) to display the
 component versions inside the current nightly image.
+
+`components` are the nightly-refreshed tools; only they drive skip detection.
+`pinned_common` (versions identical across all images) and `images` (per-image
+stacks plus each baseline tag) are extracted by `extract_baseline_pins.py`,
+which *parses* the dated Dockerfiles rather than editing them — recording pins
+never changes a Dockerfile hash, so it never forces a rebuild.
 
 ### Version sources
 
@@ -345,10 +373,52 @@ this order over time.
 ### Manifest auto-commit
 
 With `VERSIONS_AUTOCOMMIT=true`, a successful run commits and pushes the
-updated manifest to GitHub. This requires push credentials on the build server
-(e.g. a GitHub PAT via `git config credential.helper store`). If the push
-fails, the script logs a warning and continues — the manifest is still updated
-locally, so skip detection keeps working; commit it manually when convenient.
+updated manifest — together with `changelog-data.json` and
+`IMAGE-CHANGELOG.md` — to GitHub. This requires push credentials on the build
+server (e.g. a GitHub PAT via `git config credential.helper store`). If the
+push fails, the script logs a warning and continues — the manifest is still
+updated locally, so skip detection keeps working; commit it manually when
+convenient. Failed runs commit a changelog-only entry (the manifest is left
+untouched).
+
+### Build changelog
+
+Every run is recorded in two files at the repo root:
+
+| File | Role |
+|------|------|
+| `changelog-data.json` | Single source of truth — one entry per build date |
+| `IMAGE-CHANGELOG.md` | Rendered view, regenerated wholesale — **never edit by hand** |
+
+During the run the script appends one event per build phase (baseline and
+nightly, per Dockerfile) to a temporary events file. At the end of the run,
+`update_image_metadata.py build` turns those events plus the build log into a
+changelog entry containing:
+
+- per-image build outcomes with durations (✅ success / ❌ failed / ⏭️ skipped)
+- every version change this build shipped (`uv 0.11.19 → 0.11.20`)
+- **known-issue links** for the changed versions, fetched from each
+  component's release notes (GitHub releases, the Claude Code changelog, the
+  Chrome release blog, VS Code release notes). Network failures degrade to a
+  plain link and never fail the build.
+- the full component list (nightly tools + pinned stacks per image)
+- base images downloaded and a per-tag layer listing
+- a pointer to the preserved log file when a phase failed
+
+A rerun on the same date replaces that date's entry. The control plane
+attaches deploy stats to the newest entry after pulling images to the nodes:
+
+```bash
+update_image_metadata.py deploy --date 2026-06-11 --nodes-ok 14 --nodes-total 14 --duration 1320
+```
+
+Helper scripts (stdlib-only, no pip dependencies):
+
+| Script | Role |
+|--------|------|
+| `update_image_metadata.py` | Writes manifest + changelog after a run (`build`), attaches deploy stats (`deploy`) |
+| `extract_baseline_pins.py` | Parses pinned stack versions out of the dated Dockerfiles |
+| `generate_image_changelog.py` | Renders `IMAGE-CHANGELOG.md` from `changelog-data.json` |
 
 ---
 
@@ -543,9 +613,11 @@ dry-runs where an email is not needed.
 ## Log File
 
 A temporary log file is written to `/tmp/build_push_qscimages_$$.log` during
-the run and included as the email body. It is deleted at the end of every
-completed run (even with `--noemail`). If the script is interrupted mid-run,
-the log remains at that path.
+the run and included as the email body. After a successful run it is deleted
+(even with `--noemail`). After a **failed** run it is preserved at
+`/tmp/build_push_qscimages_YYYYMMDD_failed.log` — the changelog entry for the
+failed build references this path. If the script is interrupted mid-run, the
+log remains at the `$$` path.
 
 ---
 

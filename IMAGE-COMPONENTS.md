@@ -2,41 +2,54 @@
 
 What's installed in each Lobot image. Select an image on the spawn page to see what tools and libraries you'll have available.
 
----
+- **Current version numbers** for every component are in [component-versions.json](component-versions.json).
+- **What changed and when** is in the [Image Changelog](IMAGE-CHANGELOG.md).
 
-## CUDA 13.2 Image (April 24, 2026)
+Each image comes in two variants. The **(nightly)** variant is refreshed overnight with the latest developer tools (Chrome, VS Code, code-server, Ollama, Claude Code, opencode, uv, Selenium). The plain variant is frozen as it was built on its date — choose it if you need a stable, unchanging environment.
 
-### GPU & Machine Learning
-
-| Component | Version |
-|-----------|---------|
-| CUDA (incl. cuDNN runtime) | 13.2.1 |
-| Ubuntu | 24.04 |
-| Python | 3.12 |
-| TensorFlow | 2.20.0 |
-| Keras | 3.13.0 |
-| PyTorch | 2.11.0 |
-| torchvision | 0.26.0 |
-| torchaudio | 2.11.0 |
-| PyTorch Geometric | pyg_lib, torch_scatter, torch_sparse, torch_cluster, torch_spline_conv |
+Cluster GPU nodes run the NVIDIA 580-series driver; the ML stacks in these images are kept within what that driver supports.
 
 ---
 
-## CUDA 13.0 Image (March 13, 2026)
+## CUDA 13.2 · TF 2.20 · Apr 24, 2026
+
+| Spawn page option | DockerHub |
+|-------------------|-----------|
+| CUDA 13.2 · TF 2.20 · Apr 24, 2026 (nightly) | [view tag](https://hub.docker.com/r/queensschoolofcomputingdocker/gpu-jupyter-latest/tags?name=13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424-nightly) |
+| CUDA 13.2 · TF 2.20 · Apr 24, 2026 | [view tag](https://hub.docker.com/r/queensschoolofcomputingdocker/gpu-jupyter-latest/tags?name=13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424) |
+
+Full image names:<br>
+<sub><code>queensschoolofcomputingdocker/gpu-jupyter-latest:13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424-nightly</code></sub><br>
+<sub><code>queensschoolofcomputingdocker/gpu-jupyter-latest:13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424</code></sub>
 
 ### GPU & Machine Learning
 
-| Component | Version |
-|-----------|---------|
-| CUDA (incl. cuDNN runtime) | 13.0.2 |
-| Ubuntu | 24.04 |
-| Python | 3.12 |
-| TensorFlow | 2.20.0 |
-| Keras | 3.13.0 |
-| PyTorch | 2.9.1 |
-| torchvision | 0.24.1 |
-| torchaudio | 2.9.1 |
-| PyTorch Geometric | pyg_lib, torch_scatter, torch_sparse, torch_cluster, torch_spline_conv |
+- CUDA (incl. cuDNN runtime) on Ubuntu
+- Python
+- TensorFlow + Keras
+- PyTorch with torchvision and torchaudio
+- PyTorch Geometric (pyg_lib, torch_scatter, torch_sparse, torch_cluster, torch_spline_conv)
+
+---
+
+## CUDA 13.0 · TF 2.20 · Mar 13, 2026
+
+| Spawn page option | DockerHub |
+|-------------------|-----------|
+| CUDA 13.0 · TF 2.20 · Mar 13, 2026 (nightly) | [view tag](https://hub.docker.com/r/queensschoolofcomputingdocker/gpu-jupyter-latest/tags?name=13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly) |
+| CUDA 13.0 · TF 2.20 · Mar 13, 2026 | [view tag](https://hub.docker.com/r/queensschoolofcomputingdocker/gpu-jupyter-latest/tags?name=13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313) |
+
+Full image names:<br>
+<sub><code>queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly</code></sub><br>
+<sub><code>queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313</code></sub>
+
+### GPU & Machine Learning
+
+- CUDA (incl. cuDNN runtime) on Ubuntu
+- Python
+- TensorFlow + Keras
+- PyTorch with torchvision and torchaudio
+- PyTorch Geometric (pyg_lib, torch_scatter, torch_sparse, torch_cluster, torch_spline_conv)
 
 ---
 
@@ -44,35 +57,31 @@ What's installed in each Lobot image. Select an image on the spawn page to see w
 
 ### MATLAB (pinned at baseline)
 
-**MATLAB R2024b** with toolboxes: Communications, Signal Processing,
+**MATLAB** with toolboxes: Communications, Signal Processing,
 DSP System, Symbolic Math, Statistics and Machine Learning, Parallel
 Computing, Antenna, 5G, LTE, Phased Array System, Optimization, Global
 Optimization, Mapping. Licensed via the Queen's network license server.
 
 ### Jupyter & Notebooks
 
-| Component | Version |
-|-----------|---------|
-| JupyterLab + JupyterHub | Latest stable |
-| Julia | Latest stable |
-| R | Latest stable |
-| jupyterlab-git | 0.51.3 |
-| plotly | 5.24.1 |
-| ipyleaflet | 0.19.2 |
-| ipywidgets | 8.1.5 |
-| jupyterlab-spellchecker | 0.8.4 |
+- JupyterLab + JupyterHub
+- Julia
+- R
+- jupyterlab-git (Git integration)
+- plotly (interactive plots)
+- ipyleaflet (interactive maps)
+- ipywidgets (interactive notebook widgets)
+- jupyterlab-spellchecker
 
 ### Desktop & Remote Access
 
-| Component | Version |
-|-----------|---------|
-| TurboVNC | 3.3 |
-| xfce4 desktop | Latest stable |
-| GitHub CLI | Latest stable |
+- TurboVNC remote desktop
+- xfce4 desktop
+- GitHub CLI
 
 ### Automatically Updated Tools
 
-These are kept up-to-date automatically:
+These are kept up-to-date automatically (refreshed in the nightly variants):
 
 | Component | What it is |
 |-----------|------------|
@@ -85,4 +94,3 @@ These are kept up-to-date automatically:
 | `opencode` | opencode terminal coding agent |
 | `uv` | uv Python package manager |
 | `claude_code` | Claude Code CLI |
-

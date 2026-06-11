@@ -5,7 +5,7 @@
 <li><strong>Baseline build</strong> — built once per Dockerfile version. Produces a stable, fully-cached image without forced layer refreshes. Skipped automatically if the baseline tag already exists locally.</li>
 <li><strong>Nightly build</strong> — runs on a recurring schedule. Before building, the script resolves the latest upstream version of every frequently-updated component (Chrome, VS Code, Claude Code, etc.) and compares them against <code>component-versions.json</code>. If nothing changed — and the Dockerfiles themselves are unmodified — the nightly is skipped entirely. When something did change, only the layers from the first changed component downward are rebuilt (see <a href="#component-version-tracking">Component Version Tracking</a>).</li>
 </ul>
-<p>The script discovers all dated Dockerfiles in <code>.build/</code>, extracts version strings automatically, pushes tags to DockerHub (and optionally a local registry), prunes old dated nightly tags on DockerHub and locally, and emails a full build report including per-step timing.</p>
+<p>The script discovers all dated Dockerfiles in <code>.build/</code>, extracts version strings automatically, pushes tags to DockerHub (and optionally a local registry), prunes old dated nightly tags on DockerHub and locally, and emails a full build report including per-step timing. Every run is also recorded in <code>IMAGE-CHANGELOG.md</code> — per-image build outcomes, version changes, known-issue links, and (once the control plane reports in) deploy stats (see <a href="#build-changelog">Build changelog</a>).</p>
 <p>Designed to run on a dedicated build server with Docker and internet access. The build server does not need <code>kubectl</code> or cluster access — it only pushes to DockerHub. Cluster node pulls are handled separately by <code>image-pull.sh</code>.</p>
 <hr />
 <h2>Prerequisites</h2>
@@ -156,11 +156,11 @@ queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-oll
 <li>The result is compared against <code>component-versions.json</code> (the manifest from the last successful build). Each changed component is logged: <code>🔄 claude_code: 2.1.169 → 2.1.170</code></li>
 <li>Each Dockerfile is also hashed and compared against the manifest, so editing a Dockerfile triggers a rebuild even when no component changed.</li>
 <li><strong>Nothing changed →</strong> the nightly is skipped entirely: no build, no push, no new dated tag that night. The email reports "no changes". <strong>Something changed →</strong> the versions are passed to <code>docker build</code> as <code>--build-arg &lt;COMPONENT&gt;_VERSION=&lt;version&gt;</code> and only the layers from the first changed component downward are rebuilt.</li>
-<li>After every tag pushed successfully, the manifest is rewritten with the new versions, the nightly date code, and the current Dockerfile hashes — and committed/pushed to GitHub (<code>VERSIONS_AUTOCOMMIT=true</code>). A failed run keeps the old manifest so the next run retries.</li>
+<li>After every tag pushed successfully, <code>update_image_metadata.py</code> rewrites the manifest with the new versions, the nightly date code, and the current Dockerfile hashes, records the run in the build changelog (see <a href="#build-changelog">Build changelog</a>), and commits/pushes both to GitHub (<code>VERSIONS_AUTOCOMMIT=true</code>). A failed run keeps the old manifest so the next run retries — but still records a changelog entry for the failure.</li>
 </ol>
 <h3>The manifest</h3>
 <pre><code>{
-  "build_date": "20260610",
+  "build_date": "20260611",
   "components": {
     "selenium": "4.44.0",
     "vscode": "1.124.0",
@@ -168,16 +168,34 @@ queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-oll
     "chrome": "149.0.7827.55",
     "chromedriver": "149.0.7827.55",
     "ollama": "0.30.7",
-    "opencode": "1.17.1",
-    "uv": "0.11.19",
-    "claude_code": "2.1.170"
+    "opencode": "1.17.3",
+    "uv": "0.11.20",
+    "claude_code": "2.1.173"
   },
+  "pinned_common": {
+    "matlab": "R2024b",
+    "turbovnc": "3.3",
+    "jupyterlab_git": "0.51.3",
+    "...": "..."
+  },
+  "images": {
+    "20260313": {
+      "cuda": "13.0.2",
+      "tensorflow": "2.20.0",
+      "pytorch": "2.9.1",
+      "...": "...",
+      "tag": "queensschoolofcomputingdocker/gpu-jupyter-latest:...-20260313"
+    },
+    "20260424": { "...": "..." }
+  },
+  "constraints": { "host_nvidia_driver": "580" },
   "dockerfiles": {
     "Dockerfile.20260313": "&lt;sha256&gt;",
     "Dockerfile.20260424": "&lt;sha256&gt;"
   }
 }</code></pre>
 <p><code>build_date</code> is the date code of the nightly these versions correspond to — the same <code>YYYYMMDD</code> used in the <code>...-nightly-YYYYMMDD</code> dated tags. Because the manifest is committed to GitHub on every change, its git history doubles as a changelog of what each nightly actually shipped, and the raw file can be fetched (e.g. by the JupyterHub spawn page's image selection) to display the component versions inside the current nightly image.</p>
+<p><code>components</code> are the nightly-refreshed tools; only they drive skip detection. <code>pinned_common</code> (versions identical across all images) and <code>images</code> (per-image stacks plus each baseline tag) are extracted by <code>extract_baseline_pins.py</code>, which <em>parses</em> the dated Dockerfiles rather than editing them — recording pins never changes a Dockerfile hash, so it never forces a rebuild.</p>
 <h3>Version sources</h3>
 <table>
 <thead>
@@ -200,7 +218,40 @@ queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-oll
 <pre><code>selenium → VS Code → code-server → Chrome → ChromeDriver → Ollama → opencode → uv → Claude Code</code></pre>
 <p>A Claude Code release (near-daily) rebuilds only the bottom of the stack; a selenium release (rare) rebuilds everything below it. The manifest's git history shows how often each component actually changes — use it to re-tune this order over time.</p>
 <h3>Manifest auto-commit</h3>
-<p>With <code>VERSIONS_AUTOCOMMIT=true</code>, a successful run commits and pushes the updated manifest to GitHub. This requires push credentials on the build server (e.g. a GitHub PAT via <code>git config credential.helper store</code>). If the push fails, the script logs a warning and continues — the manifest is still updated locally, so skip detection keeps working; commit it manually when convenient.</p>
+<p>With <code>VERSIONS_AUTOCOMMIT=true</code>, a successful run commits and pushes the updated manifest — together with <code>changelog-data.json</code> and <code>IMAGE-CHANGELOG.md</code> — to GitHub. This requires push credentials on the build server (e.g. a GitHub PAT via <code>git config credential.helper store</code>). If the push fails, the script logs a warning and continues — the manifest is still updated locally, so skip detection keeps working; commit it manually when convenient. Failed runs commit a changelog-only entry (the manifest is left untouched).</p>
+<h3 id="build-changelog">Build changelog</h3>
+<p>Every run is recorded in two files at the repo root:</p>
+<table>
+<thead>
+<tr><th>File</th><th>Role</th></tr>
+</thead>
+<tbody>
+<tr><td><code>changelog-data.json</code></td><td>Single source of truth — one entry per build date</td></tr>
+<tr><td><code>IMAGE-CHANGELOG.md</code></td><td>Rendered view, regenerated wholesale — <strong>never edit by hand</strong></td></tr>
+</tbody>
+</table>
+<p>During the run the script appends one event per build phase (baseline and nightly, per Dockerfile) to a temporary events file. At the end of the run, <code>update_image_metadata.py build</code> turns those events plus the build log into a changelog entry containing:</p>
+<ul>
+<li>per-image build outcomes with durations (✅ success / ❌ failed / ⏭️ skipped)</li>
+<li>every version change this build shipped (<code>uv 0.11.19 → 0.11.20</code>)</li>
+<li><strong>known-issue links</strong> for the changed versions, fetched from each component's release notes (GitHub releases, the Claude Code changelog, the Chrome release blog, VS Code release notes). Network failures degrade to a plain link and never fail the build.</li>
+<li>the full component list (nightly tools + pinned stacks per image)</li>
+<li>base images downloaded and a per-tag layer listing</li>
+<li>a pointer to the preserved log file when a phase failed</li>
+</ul>
+<p>A rerun on the same date replaces that date's entry. The control plane attaches deploy stats to the newest entry after pulling images to the nodes:</p>
+<pre><code>update_image_metadata.py deploy --date 2026-06-11 --nodes-ok 14 --nodes-total 14 --duration 1320</code></pre>
+<p>Helper scripts (stdlib-only, no pip dependencies):</p>
+<table>
+<thead>
+<tr><th>Script</th><th>Role</th></tr>
+</thead>
+<tbody>
+<tr><td><code>update_image_metadata.py</code></td><td>Writes manifest + changelog after a run (<code>build</code>), attaches deploy stats (<code>deploy</code>)</td></tr>
+<tr><td><code>extract_baseline_pins.py</code></td><td>Parses pinned stack versions out of the dated Dockerfiles</td></tr>
+<tr><td><code>generate_image_changelog.py</code></td><td>Renders <code>IMAGE-CHANGELOG.md</code> from <code>changelog-data.json</code></td></tr>
+</tbody>
+</table>
 <hr />
 <h2>DockerHub Tag Pruning</h2>
 <p>After each successful nightly push, the script calls DockerHub's REST API to prune old dated tags for that Dockerfile version:</p>
@@ -314,7 +365,7 @@ TO_EMAIL="aaron.visser+lobot@queensu.ca,whb1+lobot@queensu.ca"</code></pre>
 <p>Pass <code>--noemail</code> to suppress the notification, useful for manual test runs or dry-runs where an email is not needed.</p>
 <hr />
 <h2>Log File</h2>
-<p>A temporary log file is written to <code>/tmp/build_push_qscimages_$$.log</code> during the run and included as the email body. It is deleted at the end of every completed run (even with <code>--noemail</code>). If the script is interrupted mid-run, the log remains at that path.</p>
+<p>A temporary log file is written to <code>/tmp/build_push_qscimages_$$.log</code> during the run and included as the email body. After a successful run it is deleted (even with <code>--noemail</code>). After a <strong>failed</strong> run it is preserved at <code>/tmp/build_push_qscimages_YYYYMMDD_failed.log</code> — the changelog entry for the failed build references this path. If the script is interrupted mid-run, the log remains at the <code>$$</code> path.</p>
 <hr />
 <h2>Typical Workflow</h2>
 <h3>Adding a new Dockerfile version (one-time)</h3>

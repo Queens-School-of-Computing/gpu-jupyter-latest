@@ -40,7 +40,9 @@ FROM_EMAIL="lobot+qscimagebuilder@cs.queensu.ca"
 TO_EMAIL="aaron.visser+lobot@queensu.ca,whb1+lobot@queensu.ca"
 
 LOG_FILE="/tmp/build_push_qscimages_$$.log"
+EVENTS_FILE="/tmp/build_push_qscimages_events_$$.log"
 BUILD_DATE=$(date '+%Y%m%d')
+FAILED_LOG="/tmp/build_push_qscimages_${BUILD_DATE}_failed.log"   # full log preserved here when a run fails
 
 for arg in "$@"; do
     case $arg in
@@ -65,6 +67,12 @@ fi
 
 log() {
     echo "$*" | tee -a "$LOG_FILE"
+}
+
+record_event() {
+    # RECORD|<image_date>|<type>|<status>|<duration_secs>|<tag>|<log-or-->
+    # Consumed by update_image_metadata.py to build the changelog entry.
+    echo "RECORD|$1|$2|$3|$4|$5|${6:--}" >> "$EVENTS_FILE"
 }
 
 push_with_retry() {
@@ -328,6 +336,7 @@ BODYEOF
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 > "$LOG_FILE"
+> "$EVENTS_FILE"
 SCRIPT_START=$(date +%s)
 
 if [ "$DRY_RUN" = "true" ]; then
@@ -381,7 +390,7 @@ if [ "$PUSH_ONLY" != "true" ]; then
         BODY_TMP=$(mktemp)
         build_email_body "failure" > "$BODY_TMP"
         send_email "❌ QSC image build FAILED | $(date '+%Y-%m-%d')" "$BODY_TMP"
-        rm -f "$LOG_FILE"
+        rm -f "$LOG_FILE" "$EVENTS_FILE"
         exit 1
     fi
     log "$NEW_VERSIONS"
@@ -541,6 +550,8 @@ for DOCKERFILE in $DOCKERFILES; do
         # ── Baseline phase ────────────────────────────────────────────────────
         if [ "$NIGHTLY_ONLY" != "true" ]; then
             BASELINE_OK=false
+            BASELINE_STATUS=skipped   # not rebuilt tonight — the normal case
+            BASELINE_DURATION=0
             if [ "$PUSH_ONLY" = "true" ]; then
                 if docker image inspect "$BASELINE_TAG" > /dev/null 2>&1; then
                     log "⏭️  Skipping baseline build (--push-only) — using existing: $BASELINE_TAG"
@@ -554,10 +565,14 @@ for DOCKERFILE in $DOCKERFILES; do
             else
                 BUILD_START=$(date +%s)
                 if docker build --platform=linux/amd64 "${COMPONENT_BUILD_ARGS[@]}" -f "$DOCKERFILE" -t "$BASELINE_TAG" .build/ 2>&1 | tee -a "$LOG_FILE"; then
-                    log "⏱  Baseline build time: $(format_duration $(( $(date +%s) - BUILD_START )))"
+                    BASELINE_DURATION=$(( $(date +%s) - BUILD_START ))
+                    log "⏱  Baseline build time: $(format_duration "$BASELINE_DURATION")"
                     BASELINE_OK=true
+                    BASELINE_STATUS=success
                 else
-                    log "❌ Baseline build failed after $(format_duration $(( $(date +%s) - BUILD_START ))): $BASELINE_TAG"
+                    BASELINE_DURATION=$(( $(date +%s) - BUILD_START ))
+                    log "❌ Baseline build failed after $(format_duration "$BASELINE_DURATION"): $BASELINE_TAG"
+                    BASELINE_STATUS=failed
                     FAILED=true
                 fi
             fi
@@ -572,6 +587,7 @@ for DOCKERFILE in $DOCKERFILES; do
                     else
                         log "⏱  DockerHub push (baseline): $(format_duration $(( $(date +%s) - PUSH_START )))"
                         log "❌ Push failed: $BASELINE_TAG"
+                        BASELINE_STATUS=failed
                         FAILED=true
                     fi
                 else
@@ -591,6 +607,9 @@ for DOCKERFILE in $DOCKERFILES; do
                     fi
                 fi
             fi
+
+            [ "$BASELINE_STATUS" = "failed" ] && BASELINE_EVENT_LOG="$FAILED_LOG" || BASELINE_EVENT_LOG="-"
+            record_event "$DATE" baseline "$BASELINE_STATUS" "$BASELINE_DURATION" "$BASELINE_TAG" "$BASELINE_EVENT_LOG"
         fi
 
         # ── Nightly phase ─────────────────────────────────────────────────────
@@ -598,9 +617,12 @@ for DOCKERFILE in $DOCKERFILES; do
             # Skip when neither component versions nor this Dockerfile changed
             if [ "$(verdict_for "$(basename "$DOCKERFILE")")" = "SKIP" ] && [ "$FORCE_BUILD" != "true" ] && [ "$PUSH_ONLY" != "true" ]; then
             log "⏭️  No component or Dockerfile changes since last build — skipping nightly (use --force to rebuild): $FLOATING_TAG"
+            record_event "$DATE" nightly skipped 0 "$FLOATING_TAG"
             else
             BUILD_START=$(date +%s)
             BUILD_OK=false
+            NIGHTLY_STATUS=failed
+            NIGHTLY_DURATION=0
             if [ "$PUSH_ONLY" = "true" ]; then
                 log "⏭️  Skipping nightly build (--push-only) — using existing: $FLOATING_TAG"
                 if ! docker image inspect "$FLOATING_TAG" > /dev/null 2>&1; then
@@ -609,16 +631,21 @@ for DOCKERFILE in $DOCKERFILES; do
                 else
                     docker tag "$FLOATING_TAG" "$DATED_TAG"
                     BUILD_OK=true
+                    NIGHTLY_STATUS=success
                 fi
             elif docker image inspect "$DATED_TAG" > /dev/null 2>&1 && [ "$FORCE_BUILD" != "true" ]; then
                 log "⏭️  Today's nightly already exists — skipping (use --force to rebuild): $DATED_TAG"
                 BUILD_OK=true
+                NIGHTLY_STATUS=success   # re-push of a build whose push failed earlier today
             elif docker build --platform=linux/amd64 "${COMPONENT_BUILD_ARGS[@]}" -f "$DOCKERFILE" -t "$FLOATING_TAG" .build/ 2>&1 | tee -a "$LOG_FILE"; then
-                log "⏱  Nightly build time: $(format_duration $(( $(date +%s) - BUILD_START )))"
+                NIGHTLY_DURATION=$(( $(date +%s) - BUILD_START ))
+                log "⏱  Nightly build time: $(format_duration "$NIGHTLY_DURATION")"
                 docker tag "$FLOATING_TAG" "$DATED_TAG"
                 BUILD_OK=true
+                NIGHTLY_STATUS=success
             else
-                log "❌ Nightly build failed after $(format_duration $(( $(date +%s) - BUILD_START ))): $FLOATING_TAG"
+                NIGHTLY_DURATION=$(( $(date +%s) - BUILD_START ))
+                log "❌ Nightly build failed after $(format_duration "$NIGHTLY_DURATION"): $FLOATING_TAG"
                 FAILED=true
             fi
 
@@ -638,6 +665,7 @@ for DOCKERFILE in $DOCKERFILES; do
                         prune_local_nightly_images "$DATE" 2>&1 | tee -a "$LOG_FILE"
                     else
                         log "❌ Push failed for $FLOATING_TAG / $DATED_TAG"
+                        NIGHTLY_STATUS=failed
                         FAILED=true
                     fi
                 else
@@ -662,6 +690,9 @@ for DOCKERFILE in $DOCKERFILES; do
                     fi
                 fi
             fi
+
+            [ "$NIGHTLY_STATUS" = "failed" ] && NIGHTLY_EVENT_LOG="$FAILED_LOG" || NIGHTLY_EVENT_LOG="-"
+            record_event "$DATE" nightly "$NIGHTLY_STATUS" "$NIGHTLY_DURATION" "$DATED_TAG" "$NIGHTLY_EVENT_LOG"
             fi   # end skip-verdict else
         fi
 
@@ -675,10 +706,30 @@ if [ "$FAILED" = "true" ]; then
     log "❌ One or more builds/pushes failed."
     log "⏱  Total time: $(format_duration $(( $(date +%s) - SCRIPT_START )))"
     log "=========================================="
+    # Record the failed run in the changelog; --no-manifest keeps the old
+    # manifest so the next run retries the same version changes.
+    if [ "$DRY_RUN" != "true" ] && [ -n "$NEW_VERSIONS" ]; then
+        if python3 update_image_metadata.py build --no-manifest \
+                --new-versions "$NEW_VERSIONS" --build-date "$BUILD_DATE" \
+                --events-file "$EVENTS_FILE" --log-file "$LOG_FILE" \
+                --dockerfiles $DOCKERFILES 2>&1 | tee -a "$LOG_FILE"; then
+            if [ "$VERSIONS_AUTOCOMMIT" = "true" ]; then
+                { git add changelog-data.json IMAGE-CHANGELOG.md \
+                    && git -c user.name="QSC Image Builder" -c user.email="${FROM_EMAIL}" \
+                        commit -m "chore: build changelog $(date '+%Y-%m-%d') (failed run)" \
+                    && git push; } >> "$LOG_FILE" 2>&1 \
+                    || log "⚠️  Could not commit/push changelog (non-fatal — commit manually)"
+            fi
+        else
+            log "⚠️  Metadata update failed (non-fatal)"
+        fi
+    fi
     BODY_TMP=$(mktemp)
     build_email_body "failure" "${BUILT_TAGS[@]:-}" > "$BODY_TMP"
     send_email "❌ QSC image build FAILED | $(date '+%Y-%m-%d')" "$BODY_TMP"
-    rm -f "$LOG_FILE"
+    mv -f "$LOG_FILE" "$FAILED_LOG" 2>/dev/null || rm -f "$LOG_FILE"
+    echo "Full log preserved at ${FAILED_LOG}"
+    rm -f "$EVENTS_FILE"
     exit 1
 else
     log "=========================================="
@@ -686,32 +737,33 @@ else
     log "⏱  Total time: $(format_duration $(( $(date +%s) - SCRIPT_START )))"
     log "=========================================="
 
-    # Record the component versions + Dockerfile hashes this run built, so the
-    # next run can skip when nothing changed. Only after a fully successful
-    # DockerHub run — a failed run keeps the old manifest and retries tomorrow.
-    if [ "$DRY_RUN" != "true" ] && [ "$PUSH_ONLY" != "true" ] && [ "$BASELINE_ONLY" != "true" ] \
-        && [ "$PUSH_DOCKERHUB" = "true" ] && [ -n "$NEW_VERSIONS" ] && [ ${#BUILT_TAGS[@]} -gt 0 ]; then
-        python3 - "$VERSIONS_FILE" "$NEW_VERSIONS" "$BUILD_DATE" $DOCKERFILES <<'PYEOF'
-import hashlib, json, os, sys
-path, new, build_date = sys.argv[1], json.loads(sys.argv[2]), sys.argv[3]
-data = {"build_date": build_date, "components": new, "dockerfiles": {}}
-for df in sys.argv[4:]:
-    with open(df, "rb") as f:
-        data["dockerfiles"][os.path.basename(df)] = hashlib.sha256(f.read()).hexdigest()
-with open(path, "w") as f:
-    json.dump(data, f, indent=2)
-    f.write("\n")
-PYEOF
-        log "📝 Updated ${VERSIONS_FILE}"
-        if [ "$VERSIONS_AUTOCOMMIT" = "true" ]; then
-            if { git add "$VERSIONS_FILE" \
-                && git -c user.name="QSC Image Builder" -c user.email="${FROM_EMAIL}" \
-                    commit -m "chore: component versions $(date '+%Y-%m-%d')" \
-                && git push; } >> "$LOG_FILE" 2>&1; then
-                log "📤 Committed and pushed ${VERSIONS_FILE}"
-            else
-                log "⚠️  Could not commit/push ${VERSIONS_FILE} (non-fatal — commit it manually)"
+    # Record the run: manifest (component versions + Dockerfile hashes, so the
+    # next run can skip when nothing changed) plus changelog entry. The manifest
+    # only advances after a full nightly run delivered to DockerHub — baseline-only
+    # and --no-dockerhub runs record the changelog entry but keep the old manifest
+    # so skip detection still triggers the real build.
+    if [ "$DRY_RUN" != "true" ] && [ "$PUSH_ONLY" != "true" ] \
+        && [ -n "$NEW_VERSIONS" ] && [ ${#BUILT_TAGS[@]} -gt 0 ]; then
+        METADATA_MANIFEST_FLAG=""
+        if [ "$BASELINE_ONLY" = "true" ] || [ "$PUSH_DOCKERHUB" != "true" ]; then
+            METADATA_MANIFEST_FLAG="--no-manifest"
+        fi
+        if python3 update_image_metadata.py build $METADATA_MANIFEST_FLAG \
+                --new-versions "$NEW_VERSIONS" --build-date "$BUILD_DATE" \
+                --events-file "$EVENTS_FILE" --log-file "$LOG_FILE" \
+                --dockerfiles $DOCKERFILES 2>&1 | tee -a "$LOG_FILE"; then
+            if [ "$VERSIONS_AUTOCOMMIT" = "true" ]; then
+                if { git add "$VERSIONS_FILE" changelog-data.json IMAGE-CHANGELOG.md \
+                    && git -c user.name="QSC Image Builder" -c user.email="${FROM_EMAIL}" \
+                        commit -m "chore: component versions $(date '+%Y-%m-%d')" \
+                    && git push; } >> "$LOG_FILE" 2>&1; then
+                    log "📤 Committed and pushed ${VERSIONS_FILE} + changelog"
+                else
+                    log "⚠️  Could not commit/push manifest/changelog (non-fatal — commit manually)"
+                fi
             fi
+        else
+            log "⚠️  Metadata update failed (non-fatal) — ${VERSIONS_FILE} not rewritten; next run rebuilds"
         fi
     fi
 
@@ -723,5 +775,5 @@ PYEOF
     BODY_TMP=$(mktemp)
     build_email_body "success" ${BUILT_TAGS[@]:+"${BUILT_TAGS[@]}"} > "$BODY_TMP"
     send_email "$SUBJECT" "$BODY_TMP"
-    rm -f "$LOG_FILE"
+    rm -f "$LOG_FILE" "$EVENTS_FILE"
 fi
