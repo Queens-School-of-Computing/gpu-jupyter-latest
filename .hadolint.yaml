@@ -1,0 +1,6 @@
+# DL4001 ("Either use Wget or Curl but not both") does not apply to this image:
+# the upstream jupyter/docker-stacks sections standardize on wget and install it
+# as a user-facing package, while the custom sections require curl for upstream
+# install scripts (code-server, Ollama, uv, opencode). Both tools ship regardless.
+ignored:
+  - DL4001
