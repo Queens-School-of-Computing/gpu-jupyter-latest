@@ -263,6 +263,10 @@ def cmd_build(args):
     }
     if full_components:
         manifest["full_components"] = full_components
+    elif old_manifest.get("full_components"):
+        # Carry the last full rebuild's record forward so each full run
+        # diffs against the previous one instead of reporting "(new)".
+        manifest["full_components"] = old_manifest["full_components"]
     for path in args.dockerfiles:
         with open(path, "rb") as f:
             manifest["dockerfiles"][os.path.basename(path)] = hashlib.sha256(f.read()).hexdigest()

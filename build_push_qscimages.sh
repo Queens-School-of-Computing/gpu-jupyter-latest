@@ -30,6 +30,7 @@ FORCE_BUILD=false
 FORCE_BASELINE=false
 BASELINE_ONLY=false
 NIGHTLY_ONLY=false
+FULL_BUILD=false
 
 SMTP_SERVER="innovate.cs.queensu.ca"
 SMTP_PORT=25
@@ -51,6 +52,7 @@ for arg in "$@"; do
         --no-dockerhub)   PUSH_DOCKERHUB=false ;;
         --push-only)      PUSH_ONLY=true ;;
         --force)          FORCE_BUILD=true ;;
+        --full)           FULL_BUILD=true ;;
         --force-baseline) FORCE_BASELINE=true ;;
         --baseline-only)  BASELINE_ONLY=true ;;
         --nightly-only)   NIGHTLY_ONLY=true ;;
@@ -61,6 +63,16 @@ done
 if [ "$BASELINE_ONLY" = "true" ] && [ "$NIGHTLY_ONLY" = "true" ]; then
     echo "Error: --baseline-only and --nightly-only are mutually exclusive"
     exit 1
+fi
+
+# --full: the nightly builds with --no-cache so every layer refreshes (OS
+# packages, installers, ML stack re-fetch). Same tags — the full build IS that
+# night's nightly — recorded in the changelog as type "full-nightly".
+NIGHTLY_BUILD_OPTS=()
+NIGHTLY_TYPE="nightly"
+if [ "$FULL_BUILD" = "true" ]; then
+    NIGHTLY_BUILD_OPTS=(--no-cache)
+    NIGHTLY_TYPE="full-nightly"
 fi
 
 # ── Logging ────────────────────────────────────────────────────────────────────
@@ -343,6 +355,10 @@ if [ "$DRY_RUN" = "true" ]; then
     log "=== DRY RUN — no builds or pushes will happen ==="
 fi
 
+if [ "$FULL_BUILD" = "true" ]; then
+    log "=== FULL NIGHTLY — building with --no-cache (every layer refreshes) ==="
+fi
+
 # Log in to local registry if configured
 if [ -n "$LOCAL_REGISTRY" ] && [ "$DRY_RUN" != "true" ]; then
     if [ -z "$LOCAL_REGISTRY_PASSWORD" ]; then
@@ -451,6 +467,13 @@ PYEOF
     fi
 fi
 
+# On full runs, the metadata step also records full_components — the versions
+# the last fresh-everything rebuild shipped.
+METADATA_FULL_ARGS=()
+if [ "$FULL_BUILD" = "true" ] && [ -n "$NEW_VERSIONS" ]; then
+    METADATA_FULL_ARGS=(--full-versions "$NEW_VERSIONS")
+fi
+
 for DOCKERFILE in $DOCKERFILES; do
     DATE=$(basename "$DOCKERFILE" | grep -oE '[0-9]{8}')
     CUDA=$(grep -v '^[[:space:]]*#' "$DOCKERFILE" | grep -oE 'nvidia/cuda:[0-9]+\.[0-9]+\.[0-9]+' | head -1 | cut -d: -f2)
@@ -517,15 +540,15 @@ for DOCKERFILE in $DOCKERFILES; do
 
         # ── Nightly dry-run ──
         if [ "$BASELINE_ONLY" != "true" ]; then
-            if [ "$(verdict_for "$(basename "$DOCKERFILE")")" = "SKIP" ] && [ "$FORCE_BUILD" != "true" ] && [ "$PUSH_ONLY" != "true" ]; then
+            if [ "$(verdict_for "$(basename "$DOCKERFILE")")" = "SKIP" ] && [ "$FORCE_BUILD" != "true" ] && [ "$FULL_BUILD" != "true" ] && [ "$PUSH_ONLY" != "true" ]; then
                 log "[dry-run] no component or Dockerfile changes — would skip nightly (use --force to rebuild): $FLOATING_TAG"
             else
                 if [ "$PUSH_ONLY" = "true" ]; then
                     log "[dry-run] skipping nightly build (--push-only) — would use existing: $FLOATING_TAG"
-                elif docker image inspect "$DATED_TAG" > /dev/null 2>&1 && [ "$FORCE_BUILD" != "true" ]; then
+                elif docker image inspect "$DATED_TAG" > /dev/null 2>&1 && [ "$FORCE_BUILD" != "true" ] && [ "$FULL_BUILD" != "true" ]; then
                     log "[dry-run] today's nightly already exists — would skip (use --force to rebuild): $DATED_TAG"
                 else
-                    log "[dry-run] docker build --platform=linux/amd64 ${COMPONENT_BUILD_ARGS[*]:-} -f $DOCKERFILE -t $FLOATING_TAG .build/"
+                    log "[dry-run] docker build --platform=linux/amd64 ${NIGHTLY_BUILD_OPTS[*]:-} ${COMPONENT_BUILD_ARGS[*]:-} -f $DOCKERFILE -t $FLOATING_TAG .build/"
                 fi
                 log "[dry-run] docker tag $FLOATING_TAG $DATED_TAG"
                 if [ "$PUSH_DOCKERHUB" = "true" ]; then
@@ -615,7 +638,7 @@ for DOCKERFILE in $DOCKERFILES; do
         # ── Nightly phase ─────────────────────────────────────────────────────
         if [ "$BASELINE_ONLY" != "true" ]; then
             # Skip when neither component versions nor this Dockerfile changed
-            if [ "$(verdict_for "$(basename "$DOCKERFILE")")" = "SKIP" ] && [ "$FORCE_BUILD" != "true" ] && [ "$PUSH_ONLY" != "true" ]; then
+            if [ "$(verdict_for "$(basename "$DOCKERFILE")")" = "SKIP" ] && [ "$FORCE_BUILD" != "true" ] && [ "$FULL_BUILD" != "true" ] && [ "$PUSH_ONLY" != "true" ]; then
             log "⏭️  No component or Dockerfile changes since last build — skipping nightly (use --force to rebuild): $FLOATING_TAG"
             record_event "$DATE" nightly skipped 0 "$FLOATING_TAG"
             else
@@ -633,11 +656,11 @@ for DOCKERFILE in $DOCKERFILES; do
                     BUILD_OK=true
                     NIGHTLY_STATUS=success
                 fi
-            elif docker image inspect "$DATED_TAG" > /dev/null 2>&1 && [ "$FORCE_BUILD" != "true" ]; then
+            elif docker image inspect "$DATED_TAG" > /dev/null 2>&1 && [ "$FORCE_BUILD" != "true" ] && [ "$FULL_BUILD" != "true" ]; then
                 log "⏭️  Today's nightly already exists — skipping (use --force to rebuild): $DATED_TAG"
                 BUILD_OK=true
                 NIGHTLY_STATUS=success   # re-push of a build whose push failed earlier today
-            elif docker build --platform=linux/amd64 "${COMPONENT_BUILD_ARGS[@]}" -f "$DOCKERFILE" -t "$FLOATING_TAG" .build/ 2>&1 | tee -a "$LOG_FILE"; then
+            elif docker build --platform=linux/amd64 ${NIGHTLY_BUILD_OPTS[@]+"${NIGHTLY_BUILD_OPTS[@]}"} "${COMPONENT_BUILD_ARGS[@]}" -f "$DOCKERFILE" -t "$FLOATING_TAG" .build/ 2>&1 | tee -a "$LOG_FILE"; then
                 NIGHTLY_DURATION=$(( $(date +%s) - BUILD_START ))
                 log "⏱  Nightly build time: $(format_duration "$NIGHTLY_DURATION")"
                 docker tag "$FLOATING_TAG" "$DATED_TAG"
@@ -692,7 +715,7 @@ for DOCKERFILE in $DOCKERFILES; do
             fi
 
             [ "$NIGHTLY_STATUS" = "failed" ] && NIGHTLY_EVENT_LOG="$FAILED_LOG" || NIGHTLY_EVENT_LOG="-"
-            record_event "$DATE" nightly "$NIGHTLY_STATUS" "$NIGHTLY_DURATION" "$DATED_TAG" "$NIGHTLY_EVENT_LOG"
+            record_event "$DATE" "$NIGHTLY_TYPE" "$NIGHTLY_STATUS" "$NIGHTLY_DURATION" "$DATED_TAG" "$NIGHTLY_EVENT_LOG"
             fi   # end skip-verdict else
         fi
 
@@ -710,6 +733,7 @@ if [ "$FAILED" = "true" ]; then
     # manifest so the next run retries the same version changes.
     if [ "$DRY_RUN" != "true" ] && [ -n "$NEW_VERSIONS" ]; then
         if python3 update_image_metadata.py build --no-manifest \
+                ${METADATA_FULL_ARGS[@]+"${METADATA_FULL_ARGS[@]}"} \
                 --new-versions "$NEW_VERSIONS" --build-date "$BUILD_DATE" \
                 --events-file "$EVENTS_FILE" --log-file "$LOG_FILE" \
                 --dockerfiles $DOCKERFILES 2>&1 | tee -a "$LOG_FILE"; then
@@ -749,6 +773,7 @@ else
             METADATA_MANIFEST_FLAG="--no-manifest"
         fi
         if python3 update_image_metadata.py build $METADATA_MANIFEST_FLAG \
+                ${METADATA_FULL_ARGS[@]+"${METADATA_FULL_ARGS[@]}"} \
                 --new-versions "$NEW_VERSIONS" --build-date "$BUILD_DATE" \
                 --events-file "$EVENTS_FILE" --log-file "$LOG_FILE" \
                 --dockerfiles $DOCKERFILES 2>&1 | tee -a "$LOG_FILE"; then

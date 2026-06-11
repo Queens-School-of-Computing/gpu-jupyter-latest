@@ -217,6 +217,10 @@ queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-oll
 <p>Docker layers are a chain — when one layer rebuilds, every layer below it rebuilds too. The component layers are therefore ordered <strong>least → most frequently updated</strong> in the Dockerfiles:</p>
 <pre><code>selenium → VS Code → code-server → Chrome → ChromeDriver → Ollama → opencode → uv → Claude Code</code></pre>
 <p>A Claude Code release (near-daily) rebuilds only the bottom of the stack; a selenium release (rare) rebuilds everything below it. The manifest's git history shows how often each component actually changes — use it to re-tune this order over time.</p>
+<h3 id="full-nightly">Full nightly</h3>
+<p>Component tracking only refreshes the nine managed layers — everything else (OS packages, the ML stack, MATLAB, xfce) stays cached from the baseline indefinitely. A <code>--full</code> run rebuilds the nightly with <code>--no-cache</code>, so every layer refreshes: <code>apt-get upgrade</code> picks up OS security updates, installers re-fetch, the pinned pip stack reinstalls. It then pushes the <strong>same</strong> floating/dated tags — the full build simply becomes that night's nightly — and subsequent incremental nightlies build on the refreshed layer cache.</p>
+<p>A full run always builds (skip detection and the dated-tag check are bypassed). In the changelog its builds are typed <code>full-nightly</code>, and the manifest additionally records <code>full_components</code> — the component versions the last full rebuild shipped — carried forward between full runs so each one diffs against the previous full, not against "(new)". The baseline tag is unaffected; it remains the frozen rollback image.</p>
+<p>Recommended cadence: weekly via cron (see <a href="#automated-cron">Automated (cron)</a>), at the cost of one ~3-hour build.</p>
 <h3>Manifest auto-commit</h3>
 <p>With <code>VERSIONS_AUTOCOMMIT=true</code>, a successful run commits and pushes the updated manifest — together with <code>changelog-data.json</code> and <code>IMAGE-CHANGELOG.md</code> — to GitHub. This requires push credentials on the build server (e.g. a GitHub PAT via <code>git config credential.helper store</code>). If the push fails, the script logs a warning and continues — the manifest is still updated locally, so skip detection keeps working; commit it manually when convenient. Failed runs commit a changelog-only entry (the manifest is left untouched).</p>
 <h3 id="build-changelog">Build changelog</h3>
@@ -278,7 +282,7 @@ queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-oll
 <p>If all retries fail, the tag is marked as failed and the email reports failure.</p>
 <hr />
 <h2>Usage</h2>
-<pre><code>./build_push_qscimages.sh [--dry-run] [--noemail] [--no-dockerhub] [--push-only] [--baseline-only] [--nightly-only] [--force] [--force-baseline]</code></pre>
+<pre><code>./build_push_qscimages.sh [--dry-run] [--noemail] [--no-dockerhub] [--push-only] [--baseline-only] [--nightly-only] [--force] [--full] [--force-baseline]</code></pre>
 <table>
 <thead>
 <tr><th>Flag</th><th>Description</th></tr>
@@ -291,6 +295,7 @@ queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-oll
 <tr><td><code>--baseline-only</code></td><td>Build and push baseline only; skip nightly</td></tr>
 <tr><td><code>--nightly-only</code></td><td>Skip baseline check entirely; build and push nightly only</td></tr>
 <tr><td><code>--force</code></td><td>Rebuild nightly even if nothing changed and/or today's dated tag already exists locally</td></tr>
+<tr><td><code>--full</code></td><td>Build the nightly with <code>--no-cache</code>: every layer refreshes (OS package updates, fresh installers, ML stack re-fetch). Same tags as a normal nightly; always builds (implies <code>--force</code>); recorded in the changelog as <code>full-nightly</code>. See <a href="#full-nightly">Full nightly</a>.</td></tr>
 <tr><td><code>--force-baseline</code></td><td>Rebuild baseline even if it already exists locally</td></tr>
 </tbody>
 </table>
@@ -384,9 +389,12 @@ TO_EMAIL="aaron.visser+lobot@queensu.ca,whb1+lobot@queensu.ca"</code></pre>
 
 # Full nightly build and push (run inside tmux)
 ./build_push_qscimages.sh --nightly-only</code></pre>
-<h3>Automated (cron)</h3>
-<p>Add to crontab on the build server. Run at 02:00 nightly. Use <code>--nightly-only</code> so the cron job never accidentally triggers a baseline rebuild. Pull the repo first so the run always uses the latest script, Dockerfiles, and manifest — this also keeps the clone fast-forwardable so the manifest auto-commit can push:</p>
-<pre><code>0 2 * * * . /etc/lobot/dockerhub-creds &amp;&amp; cd /root/GitHub/gpu-jupyter-latest &amp;&amp; git pull --rebase &amp;&amp; ./build_push_qscimages.sh --nightly-only</code></pre>
+<h3 id="automated-cron">Automated (cron)</h3>
+<p>Add to crontab on the build server. Run at 02:00 nightly: incremental six nights a week, and a <code>--full</code> fresh-everything rebuild on Sundays (see <a href="#full-nightly">Full nightly</a>). Use <code>--nightly-only</code> so the cron job never accidentally triggers a baseline rebuild. Pull the repo first so the run always uses the latest script, Dockerfiles, and manifest — this also keeps the clone fast-forwardable so the manifest auto-commit can push:</p>
+<pre><code># Incremental nightly (Mon–Sat) — skips entirely when nothing changed
+0 2 * * 1-6 . /etc/lobot/dockerhub-creds &amp;&amp; cd /root/GitHub/gpu-jupyter-latest &amp;&amp; git pull --rebase &amp;&amp; ./build_push_qscimages.sh --nightly-only
+# Full nightly (Sun) — --no-cache refresh of every layer (~3h)
+0 2 * * 0 . /etc/lobot/dockerhub-creds &amp;&amp; cd /root/GitHub/gpu-jupyter-latest &amp;&amp; git pull --rebase &amp;&amp; ./build_push_qscimages.sh --nightly-only --full</code></pre>
 <p>Where <code>/etc/lobot/dockerhub-creds</code> contains:</p>
 <pre><code>export DOCKERHUB_PASSWORD='dckr_pat_your_token_here'</code></pre>
 <p>For the <code>component-versions.json</code> auto-commit to reach GitHub, the build server's clone also needs push credentials (e.g. a GitHub PAT stored via <code>git config credential.helper store</code>). Without them the script logs a warning and continues — skip detection still works from the local manifest.</p>
@@ -426,12 +434,8 @@ TO_EMAIL="aaron.visser+lobot@queensu.ca,whb1+lobot@queensu.ca"</code></pre>
 <p>There is no <code>CACHE_BUST</code> line anymore. Each frequently-updated component declares an <code>ARG &lt;COMPONENT&gt;_VERSION</code> immediately before its layer; the build script passes the resolved versions as <code>--build-arg</code>s, so a layer's cache is invalidated exactly when its component's version changes. Everything below a changed layer rebuilds too (Docker layers are a chain), which is why the components are ordered least → most frequently updated.</p>
 <p>The version-managed layers are: selenium (+PyVirtualDisplay), VS Code, code-server (+ms-python extension), Chrome, ChromeDriver, Ollama, opencode, uv, and Claude Code. Everything else (MATLAB, PyTorch, xfce4, etc.) is cached from the baseline and only rebuilds when the Dockerfile content above changes.</p>
 <p>The ARG defaults in the Dockerfiles are a snapshot so a manual no-arg <code>docker build</code> still works; the build script always overrides them.</p>
-<p>To force a completely fresh build of everything:</p>
-<pre><code># Not done by the script — run manually if needed
-docker build --no-cache --platform=linux/amd64 \
-  -f .build/Dockerfile.20260313 \
-  -t queensschoolofcomputingdocker/gpu-jupyter-latest:... \
-  .build/</code></pre>
+<p>To force a completely fresh build of everything, use the full nightly (see <a href="#full-nightly">Full nightly</a>):</p>
+<pre><code>./build_push_qscimages.sh --nightly-only --full</code></pre>
 <h3>Build server proxy</h3>
 <p>If the build server routes outbound traffic through a proxy, Docker may hit <code>i/o timeout</code> errors on push. The <code>PUSH_RETRIES</code> and <code>PUSH_RETRY_DELAY</code> settings handle transient timeouts automatically. If pushes fail consistently, check <code>HTTP_PROXY</code> / <code>HTTPS_PROXY</code> in the Docker daemon environment.</p>
 <h3>Platform mismatch</h3>

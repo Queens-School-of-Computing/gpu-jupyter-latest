@@ -370,6 +370,26 @@ selenium release (rare) rebuilds everything below it. The manifest's git
 history shows how often each component actually changes — use it to re-tune
 this order over time.
 
+### Full nightly {#full-nightly}
+
+Component tracking only refreshes the nine managed layers — everything else
+(OS packages, the ML stack, MATLAB, xfce) stays cached from the baseline
+indefinitely. A `--full` run rebuilds the nightly with `--no-cache`, so every
+layer refreshes: `apt-get upgrade` picks up OS security updates, installers
+re-fetch, the pinned pip stack reinstalls. It then pushes the **same**
+floating/dated tags — the full build simply becomes that night's nightly —
+and subsequent incremental nightlies build on the refreshed layer cache.
+
+A full run always builds (skip detection and the dated-tag check are
+bypassed). In the changelog its builds are typed `full-nightly`, and the
+manifest additionally records `full_components` — the component versions the
+last full rebuild shipped — carried forward between full runs so each one
+diffs against the previous full, not against "(new)". The baseline tag is
+unaffected; it remains the frozen rollback image.
+
+Recommended cadence: weekly via cron (see [Automated (cron)](#automated-cron)),
+at the cost of one ~3-hour build.
+
 ### Manifest auto-commit
 
 With `VERSIONS_AUTOCOMMIT=true`, a successful run commits and pushes the
@@ -474,7 +494,7 @@ If all retries fail, the tag is marked as failed and the email reports failure.
 ## Usage
 
 ```bash
-./build_push_qscimages.sh [--dry-run] [--noemail] [--no-dockerhub] [--push-only] [--baseline-only] [--nightly-only] [--force] [--force-baseline]
+./build_push_qscimages.sh [--dry-run] [--noemail] [--no-dockerhub] [--push-only] [--baseline-only] [--nightly-only] [--force] [--full] [--force-baseline]
 ```
 
 | Flag | Description |
@@ -486,6 +506,7 @@ If all retries fail, the tag is marked as failed and the email reports failure.
 | `--baseline-only` | Build and push baseline only; skip nightly |
 | `--nightly-only` | Skip baseline check entirely; build and push nightly only |
 | `--force` | Rebuild nightly even if nothing changed and/or today's dated tag already exists locally |
+| `--full` | Build the nightly with `--no-cache`: every layer refreshes (OS package updates, fresh installers, ML stack re-fetch). Same tags as a normal nightly; always builds (implies `--force`); recorded in the changelog as `full-nightly`. See [Full nightly](#full-nightly). |
 | `--force-baseline` | Rebuild baseline even if it already exists locally |
 
 `--baseline-only` and `--nightly-only` are mutually exclusive.
@@ -647,16 +668,20 @@ export DOCKERHUB_PASSWORD='dckr_pat_your_token_here'
 ./build_push_qscimages.sh --nightly-only
 ```
 
-### Automated (cron)
+### Automated (cron) {#automated-cron}
 
-Add to crontab on the build server. Run at 02:00 nightly. Use `--nightly-only`
-so the cron job never accidentally triggers a baseline rebuild. Pull the repo
-first so the run always uses the latest script, Dockerfiles, and manifest —
-this also keeps the clone fast-forwardable so the manifest auto-commit can
-push:
+Add to crontab on the build server. Run at 02:00 nightly: incremental six
+nights a week, and a `--full` fresh-everything rebuild on Sundays (see
+[Full nightly](#full-nightly)). Use `--nightly-only` so the cron job never
+accidentally triggers a baseline rebuild. Pull the repo first so the run
+always uses the latest script, Dockerfiles, and manifest — this also keeps
+the clone fast-forwardable so the manifest auto-commit can push:
 
 ```
-0 2 * * * . /etc/lobot/dockerhub-creds && cd /root/GitHub/gpu-jupyter-latest && git pull --rebase && ./build_push_qscimages.sh --nightly-only
+# Incremental nightly (Mon–Sat) — skips entirely when nothing changed
+0 2 * * 1-6 . /etc/lobot/dockerhub-creds && cd /root/GitHub/gpu-jupyter-latest && git pull --rebase && ./build_push_qscimages.sh --nightly-only
+# Full nightly (Sun) — --no-cache refresh of every layer (~3h)
+0 2 * * 0 . /etc/lobot/dockerhub-creds && cd /root/GitHub/gpu-jupyter-latest && git pull --rebase && ./build_push_qscimages.sh --nightly-only --full
 ```
 
 Where `/etc/lobot/dockerhub-creds` contains:
@@ -734,14 +759,11 @@ from the baseline and only rebuilds when the Dockerfile content above changes.
 The ARG defaults in the Dockerfiles are a snapshot so a manual no-arg
 `docker build` still works; the build script always overrides them.
 
-To force a completely fresh build of everything:
+To force a completely fresh build of everything, use the full nightly (see
+[Full nightly](#full-nightly)):
 
 ```bash
-# Not done by the script — run manually if needed
-docker build --no-cache --platform=linux/amd64 \
-  -f .build/Dockerfile.20260313 \
-  -t queensschoolofcomputingdocker/gpu-jupyter-latest:... \
-  .build/
+./build_push_qscimages.sh --nightly-only --full
 ```
 
 ### Build server proxy
