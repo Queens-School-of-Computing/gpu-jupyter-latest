@@ -9,6 +9,67 @@ Build and deployment history for the Lobot JupyterLab images. See
 
 ---
 
+## 2026-06-12
+
+**Build:** 20260313 nightly ✅ 10m 31s · 20260424 nightly ✅ 10m 4s — warnings in build log: 8
+**Changed:** `claude_code` 2.1.174 → 2.1.175 · `vscode` 1.124.0 → 1.124.2
+**Known issues (for the versions in this build):**
+- `claude_code` 2.1.175 — [release notes](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md) — see changelog entry (no known-issues section)
+- `vscode` 1.124.2 — [release notes](https://code.visualstudio.com/updates/v1_124) — see VS Code release notes
+
+<details>
+<summary>Full component list (2026-06-12)</summary>
+
+| Component | Version | Scope |
+|-----------|---------|-------|
+| `chrome` | 149.0.7827.115 | nightly tools |
+| `chromedriver` | 149.0.7827.115 | nightly tools |
+| `claude_code` | 2.1.175 | nightly tools |
+| `code_server` | 4.123.0 | nightly tools |
+| `ollama` | 0.30.7 | nightly tools |
+| `opencode` | 1.17.4 | nightly tools |
+| `selenium` | 4.44.0 | nightly tools |
+| `uv` | 0.11.21 | nightly tools |
+| `vscode` | 1.124.2 | nightly tools |
+| `ipyleaflet` | 0.19.2 | pinned, all images |
+| `ipywidgets` | 8.1.5 | pinned, all images |
+| `jupyterlab_git` | 0.51.3 | pinned, all images |
+| `jupyterlab_spellchecker` | 0.8.4 | pinned, all images |
+| `matlab` | R2024b | pinned, all images |
+| `plotly` | 5.24.1 | pinned, all images |
+| `turbovnc` | 3.3 | pinned, all images |
+| `cuda` | 13.0.2 | pinned, 20260313 |
+| `keras` | 3.13.0 | pinned, 20260313 |
+| `python` | 3.12 | pinned, 20260313 |
+| `pytorch` | 2.9.1 | pinned, 20260313 |
+| `tensorflow` | 2.20.0 | pinned, 20260313 |
+| `torch_cuda_line` | cu126 | pinned, 20260313 |
+| `torchaudio` | 2.9.1 | pinned, 20260313 |
+| `torchvision` | 0.24.1 | pinned, 20260313 |
+| `ubuntu` | 24.04 | pinned, 20260313 |
+| `cuda` | 13.2.1 | pinned, 20260424 |
+| `keras` | 3.13.0 | pinned, 20260424 |
+| `python` | 3.12 | pinned, 20260424 |
+| `pytorch` | 2.11.0 | pinned, 20260424 |
+| `tensorflow` | 2.20.0 | pinned, 20260424 |
+| `torch_cuda_line` | cu126 | pinned, 20260424 |
+| `torchaudio` | 2.11.0 | pinned, 20260424 |
+| `torchvision` | 0.26.0 | pinned, 20260424 |
+| `ubuntu` | 24.04 | pinned, 20260424 |
+
+</details>
+
+<details>
+<summary>Layers &amp; base images</summary>
+
+Base images downloaded:
+- `docker.io/nvidia/cuda:13.0.2-cudnn-runtime-ubuntu24.04`
+- `docker.io/nvidia/cuda:13.2.1-cudnn-runtime-ubuntu24.04`
+
+</details>
+
+---
+
 ## 2026-06-11
 
 **Build:** 20260313 full-nightly ✅ 1h 1m · 20260424 full-nightly ✅ 1h 0m — warnings in build log: 200
