@@ -4,12 +4,12 @@
     "selenium": "4.44.0",
     "vscode": "1.124.0",
     "code_server": "4.123.0",
-    "chrome": "149.0.7827.55",
-    "chromedriver": "149.0.7827.55",
+    "chrome": "149.0.7827.115",
+    "chromedriver": "149.0.7827.115",
     "ollama": "0.30.7",
-    "opencode": "1.17.3",
-    "uv": "0.11.20",
-    "claude_code": "2.1.173"
+    "opencode": "1.17.4",
+    "uv": "0.11.21",
+    "claude_code": "2.1.174"
   },
   "pinned_common": {
     "matlab": "R2024b",
@@ -57,11 +57,11 @@
     "selenium": "4.44.0",
     "vscode": "1.124.0",
     "code_server": "4.123.0",
-    "chrome": "149.0.7827.55",
-    "chromedriver": "149.0.7827.55",
+    "chrome": "149.0.7827.115",
+    "chromedriver": "149.0.7827.115",
     "ollama": "0.30.7",
-    "opencode": "1.17.3",
-    "uv": "0.11.20",
-    "claude_code": "2.1.173"
+    "opencode": "1.17.4",
+    "uv": "0.11.21",
+    "claude_code": "2.1.174"
   }
 }
