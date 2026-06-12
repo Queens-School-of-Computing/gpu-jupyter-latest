@@ -11,22 +11,27 @@ Build and deployment history for the Lobot JupyterLab images. See
 
 ## 2026-06-11
 
-**Build:** 20260313 full-nightly ✅ 1h 5m · 20260424 full-nightly ❌ (log: `/tmp/build_push_qscimages_20260611_failed.log`) — warnings in build log: 139
-**Changed:** nothing — versions unchanged
+**Build:** 20260313 full-nightly ❌ (log: `/tmp/build_push_qscimages_20260611_failed.log`) · 20260424 full-nightly ❌ (log: `/tmp/build_push_qscimages_20260611_failed.log`) — warnings in build log: 91
+**Changed:** `chrome` 149.0.7827.55 → 149.0.7827.115 · `chrome (full nightly)` 149.0.7827.55 → 149.0.7827.115 · `chromedriver` 149.0.7827.55 → 149.0.7827.115 · `chromedriver (full nightly)` 149.0.7827.55 → 149.0.7827.115 · `claude_code` 2.1.173 → 2.1.174 · `claude_code (full nightly)` 2.1.173 → 2.1.174 · `uv` 0.11.20 → 0.11.21 · `uv (full nightly)` 0.11.20 → 0.11.21
+**Known issues (for the versions in this build):**
+- `chrome` 149.0.7827.115 — [release notes](https://chromereleases.googleblog.com/search/label/Stable%20updates) — see Chrome stable release blog
+- `chromedriver` 149.0.7827.115 — [release notes](https://chromereleases.googleblog.com/search/label/Stable%20updates) — see Chrome stable release blog
+- `claude_code` 2.1.174 — [release notes](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md) — see changelog entry (no known-issues section)
+- `uv` 0.11.21 — [release notes](https://github.com/astral-sh/uv/releases/tag/0.11.21) — none listed in release notes
 
 <details>
 <summary>Full component list (2026-06-11)</summary>
 
 | Component | Version | Scope |
 |-----------|---------|-------|
-| `chrome` | 149.0.7827.55 | nightly tools |
-| `chromedriver` | 149.0.7827.55 | nightly tools |
-| `claude_code` | 2.1.173 | nightly tools |
+| `chrome` | 149.0.7827.115 | nightly tools |
+| `chromedriver` | 149.0.7827.115 | nightly tools |
+| `claude_code` | 2.1.174 | nightly tools |
 | `code_server` | 4.123.0 | nightly tools |
 | `ollama` | 0.30.7 | nightly tools |
 | `opencode` | 1.17.3 | nightly tools |
 | `selenium` | 4.44.0 | nightly tools |
-| `uv` | 0.11.20 | nightly tools |
+| `uv` | 0.11.21 | nightly tools |
 | `vscode` | 1.124.0 | nightly tools |
 | `ipyleaflet` | 0.19.2 | pinned, all images |
 | `ipywidgets` | 8.1.5 | pinned, all images |
