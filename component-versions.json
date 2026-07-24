@@ -1,14 +1,14 @@
 {
-  "build_date": "20260723",
+  "build_date": "20260724",
   "components": {
     "selenium": "4.46.0",
     "vscode": "1.130.0",
-    "code_server": "4.129.0",
+    "code_server": "4.130.0",
     "chrome": "151.0.7922.47",
     "chromedriver": "151.0.7922.47",
-    "ollama": "0.32.1",
+    "ollama": "0.32.3",
     "opencode": "1.18.4",
-    "uv": "0.11.31",
+    "uv": "0.11.32",
     "claude_code": "2.1.218"
   },
   "pinned_common": {
