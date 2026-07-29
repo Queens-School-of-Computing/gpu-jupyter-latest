@@ -1,5 +1,5 @@
 {
-  "build_date": "20260728",
+  "build_date": "20260729",
   "components": {
     "selenium": "4.46.0",
     "vscode": "1.130.0",
@@ -7,8 +7,8 @@
     "chrome": "151.0.7922.47",
     "chromedriver": "151.0.7922.47",
     "ollama": "0.32.5",
-    "opencode": "1.18.7",
-    "uv": "0.11.32",
+    "opencode": "1.18.9",
+    "uv": "0.12.0",
     "claude_code": "2.1.220"
   },
   "pinned_common": {
