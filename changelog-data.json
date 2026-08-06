@@ -1,6 +1,134 @@
 {
   "entries": [
     {
+      "build_date": "20260806",
+      "timestamp": "2026-08-06T06:33:35+00:00",
+      "builds": [
+        {
+          "image": "20260313",
+          "type": "nightly",
+          "status": "success",
+          "duration_seconds": 695,
+          "tag": "queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly-20260806"
+        },
+        {
+          "image": "20260424",
+          "type": "nightly",
+          "status": "success",
+          "duration_seconds": 685,
+          "tag": "queensschoolofcomputingdocker/gpu-jupyter-latest:13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424-nightly-20260806"
+        }
+      ],
+      "warnings": 18,
+      "changes": {
+        "vscode": [
+          "1.131.0",
+          "1.132.0"
+        ],
+        "ollama": [
+          "0.32.5",
+          "0.32.6"
+        ],
+        "opencode": [
+          "1.18.13",
+          "1.18.14"
+        ],
+        "uv": [
+          "0.12.1",
+          "0.12.2"
+        ],
+        "claude_code": [
+          "2.1.222",
+          "2.1.223"
+        ]
+      },
+      "components": {
+        "nightly": {
+          "selenium": "4.46.0",
+          "vscode": "1.132.0",
+          "code_server": "4.131.0",
+          "chrome": "151.0.7922.76",
+          "chromedriver": "151.0.7922.76",
+          "ollama": "0.32.6",
+          "opencode": "1.18.14",
+          "uv": "0.12.2",
+          "claude_code": "2.1.223"
+        },
+        "pinned_common": {
+          "matlab": "R2024b",
+          "jupyterlab_git": "0.51.3",
+          "plotly": "5.24.1",
+          "ipyleaflet": "0.19.2",
+          "ipywidgets": "8.1.5",
+          "jupyterlab_spellchecker": "0.8.4",
+          "turbovnc": "3.3"
+        },
+        "images": {
+          "20260313": {
+            "cuda": "13.0.2",
+            "ubuntu": "24.04",
+            "python": "3.12",
+            "tensorflow": "2.20.0",
+            "keras": "3.13.0",
+            "pytorch": "2.9.1",
+            "torchvision": "0.24.1",
+            "torchaudio": "2.9.1",
+            "torch_cuda_line": "cu126",
+            "tag": "queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313"
+          },
+          "20260424": {
+            "cuda": "13.2.1",
+            "ubuntu": "24.04",
+            "python": "3.12",
+            "tensorflow": "2.20.0",
+            "keras": "3.13.0",
+            "pytorch": "2.11.0",
+            "torchvision": "0.26.0",
+            "torchaudio": "2.11.0",
+            "torch_cuda_line": "cu126",
+            "tag": "queensschoolofcomputingdocker/gpu-jupyter-latest:13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424"
+          }
+        }
+      },
+      "base_images": [
+        "docker.io/nvidia/cuda:13.0.2-cudnn-runtime-ubuntu24.04",
+        "docker.io/nvidia/cuda:13.2.1-cudnn-runtime-ubuntu24.04"
+      ],
+      "layers": {},
+      "known_issues": [
+        {
+          "component": "claude_code",
+          "version": "2.1.223",
+          "url": "https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md",
+          "notes": "see changelog entry (no known-issues section)"
+        },
+        {
+          "component": "ollama",
+          "version": "0.32.6",
+          "url": "https://github.com/ollama/ollama/releases/tag/v0.32.6",
+          "notes": "none listed in release notes"
+        },
+        {
+          "component": "opencode",
+          "version": "1.18.14",
+          "url": "https://github.com/anomalyco/opencode/releases/tag/v1.18.14",
+          "notes": "none listed in release notes"
+        },
+        {
+          "component": "uv",
+          "version": "0.12.2",
+          "url": "https://github.com/astral-sh/uv/releases/tag/0.12.2",
+          "notes": "none listed in release notes"
+        },
+        {
+          "component": "vscode",
+          "version": "1.132.0",
+          "url": "https://code.visualstudio.com/updates/v1_132",
+          "notes": "see VS Code release notes"
+        }
+      ]
+    },
+    {
       "build_date": "20260805",
       "timestamp": "2026-08-05T06:25:55+00:00",
       "builds": [
