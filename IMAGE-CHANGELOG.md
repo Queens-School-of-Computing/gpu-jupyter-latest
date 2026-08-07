@@ -9,6 +9,68 @@ Build and deployment history for the Lobot JupyterLab images. See
 
 ---
 
+## 2026-08-07
+
+**Build:** 20260313 nightly ✅ 8m 50s · 20260424 nightly ✅ 8m 28s — warnings in build log: 14
+**Changed:** `chrome` 151.0.7922.76 → 151.0.7922.77 · `chromedriver` 151.0.7922.76 → 151.0.7922.77 · `claude_code` 2.1.223 → 2.1.224
+**Known issues (for the versions in this build):**
+- `chrome` 151.0.7922.77 — [release notes](https://chromereleases.googleblog.com/search/label/Stable%20updates) — see Chrome stable release blog
+- `chromedriver` 151.0.7922.77 — [release notes](https://chromereleases.googleblog.com/search/label/Stable%20updates) — see Chrome stable release blog
+- `claude_code` 2.1.224 — [release notes](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md) — see changelog entry (no known-issues section)
+
+<details>
+<summary>Full component list (2026-08-07)</summary>
+
+| Component | Version | Scope |
+|-----------|---------|-------|
+| `chrome` | 151.0.7922.77 | nightly tools |
+| `chromedriver` | 151.0.7922.77 | nightly tools |
+| `claude_code` | 2.1.224 | nightly tools |
+| `code_server` | 4.131.0 | nightly tools |
+| `ollama` | 0.32.6 | nightly tools |
+| `opencode` | 1.18.14 | nightly tools |
+| `selenium` | 4.46.0 | nightly tools |
+| `uv` | 0.12.2 | nightly tools |
+| `vscode` | 1.132.0 | nightly tools |
+| `ipyleaflet` | 0.19.2 | pinned, all images |
+| `ipywidgets` | 8.1.5 | pinned, all images |
+| `jupyterlab_git` | 0.51.3 | pinned, all images |
+| `jupyterlab_spellchecker` | 0.8.4 | pinned, all images |
+| `matlab` | R2024b | pinned, all images |
+| `plotly` | 5.24.1 | pinned, all images |
+| `turbovnc` | 3.3 | pinned, all images |
+| `cuda` | 13.0.2 | pinned, 20260313 |
+| `keras` | 3.13.0 | pinned, 20260313 |
+| `python` | 3.12 | pinned, 20260313 |
+| `pytorch` | 2.9.1 | pinned, 20260313 |
+| `tensorflow` | 2.20.0 | pinned, 20260313 |
+| `torch_cuda_line` | cu126 | pinned, 20260313 |
+| `torchaudio` | 2.9.1 | pinned, 20260313 |
+| `torchvision` | 0.24.1 | pinned, 20260313 |
+| `ubuntu` | 24.04 | pinned, 20260313 |
+| `cuda` | 13.2.1 | pinned, 20260424 |
+| `keras` | 3.13.0 | pinned, 20260424 |
+| `python` | 3.12 | pinned, 20260424 |
+| `pytorch` | 2.11.0 | pinned, 20260424 |
+| `tensorflow` | 2.20.0 | pinned, 20260424 |
+| `torch_cuda_line` | cu126 | pinned, 20260424 |
+| `torchaudio` | 2.11.0 | pinned, 20260424 |
+| `torchvision` | 0.26.0 | pinned, 20260424 |
+| `ubuntu` | 24.04 | pinned, 20260424 |
+
+</details>
+
+<details>
+<summary>Layers &amp; base images</summary>
+
+Base images downloaded:
+- `docker.io/nvidia/cuda:13.0.2-cudnn-runtime-ubuntu24.04`
+- `docker.io/nvidia/cuda:13.2.1-cudnn-runtime-ubuntu24.04`
+
+</details>
+
+---
+
 ## 2026-08-06
 
 **Build:** 20260313 nightly ✅ 11m 35s · 20260424 nightly ✅ 11m 25s — warnings in build log: 18
