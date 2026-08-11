@@ -1,6 +1,134 @@
 {
   "entries": [
     {
+      "build_date": "20260811",
+      "timestamp": "2026-08-11T06:37:30+00:00",
+      "builds": [
+        {
+          "image": "20260313",
+          "type": "nightly",
+          "status": "success",
+          "duration_seconds": 717,
+          "tag": "queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly-20260811"
+        },
+        {
+          "image": "20260424",
+          "type": "nightly",
+          "status": "success",
+          "duration_seconds": 756,
+          "tag": "queensschoolofcomputingdocker/gpu-jupyter-latest:13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424-nightly-20260811"
+        }
+      ],
+      "warnings": 18,
+      "changes": {
+        "selenium": [
+          "4.46.0",
+          "4.47.0"
+        ],
+        "code_server": [
+          "4.131.0",
+          "4.132.0"
+        ],
+        "ollama": [
+          "0.32.6",
+          "0.32.8"
+        ],
+        "opencode": [
+          "1.18.15",
+          "1.18.16"
+        ],
+        "claude_code": [
+          "2.1.226",
+          "2.1.227"
+        ]
+      },
+      "components": {
+        "nightly": {
+          "selenium": "4.47.0",
+          "vscode": "1.132.0",
+          "code_server": "4.132.0",
+          "chrome": "151.0.7922.77",
+          "chromedriver": "151.0.7922.77",
+          "ollama": "0.32.8",
+          "opencode": "1.18.16",
+          "uv": "0.12.3",
+          "claude_code": "2.1.227"
+        },
+        "pinned_common": {
+          "matlab": "R2024b",
+          "jupyterlab_git": "0.51.3",
+          "plotly": "5.24.1",
+          "ipyleaflet": "0.19.2",
+          "ipywidgets": "8.1.5",
+          "jupyterlab_spellchecker": "0.8.4",
+          "turbovnc": "3.3"
+        },
+        "images": {
+          "20260313": {
+            "cuda": "13.0.2",
+            "ubuntu": "24.04",
+            "python": "3.12",
+            "tensorflow": "2.20.0",
+            "keras": "3.13.0",
+            "pytorch": "2.9.1",
+            "torchvision": "0.24.1",
+            "torchaudio": "2.9.1",
+            "torch_cuda_line": "cu126",
+            "tag": "queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313"
+          },
+          "20260424": {
+            "cuda": "13.2.1",
+            "ubuntu": "24.04",
+            "python": "3.12",
+            "tensorflow": "2.20.0",
+            "keras": "3.13.0",
+            "pytorch": "2.11.0",
+            "torchvision": "0.26.0",
+            "torchaudio": "2.11.0",
+            "torch_cuda_line": "cu126",
+            "tag": "queensschoolofcomputingdocker/gpu-jupyter-latest:13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424"
+          }
+        }
+      },
+      "base_images": [
+        "docker.io/nvidia/cuda:13.0.2-cudnn-runtime-ubuntu24.04",
+        "docker.io/nvidia/cuda:13.2.1-cudnn-runtime-ubuntu24.04"
+      ],
+      "layers": {},
+      "known_issues": [
+        {
+          "component": "claude_code",
+          "version": "2.1.227",
+          "url": "https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md",
+          "notes": "see changelog entry (no known-issues section)"
+        },
+        {
+          "component": "code_server",
+          "version": "4.132.0",
+          "url": "https://github.com/coder/code-server/releases/tag/v4.132.0",
+          "notes": "none listed in release notes"
+        },
+        {
+          "component": "ollama",
+          "version": "0.32.8",
+          "url": "https://github.com/ollama/ollama/releases/tag/v0.32.8",
+          "notes": "none listed in release notes"
+        },
+        {
+          "component": "opencode",
+          "version": "1.18.16",
+          "url": "https://github.com/anomalyco/opencode/releases/tag/v1.18.16",
+          "notes": "none listed in release notes"
+        },
+        {
+          "component": "selenium",
+          "version": "4.47.0",
+          "url": "https://github.com/SeleniumHQ/selenium/releases/tag/selenium-4.47.0",
+          "notes": "none listed in release notes"
+        }
+      ]
+    },
+    {
       "build_date": "20260808",
       "timestamp": "2026-08-08T06:14:27+00:00",
       "builds": [
