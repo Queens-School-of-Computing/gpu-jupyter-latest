@@ -510,6 +510,23 @@ If all retries fail, the tag is marked as failed and the email reports failure.
 
 ---
 
+## Concurrency Lock
+
+The script takes an exclusive `flock` on `/tmp/build_push_qscimages.lock` before
+doing any work, and re-execs itself once to acquire it. If a second invocation
+starts while one is already running — an overlapping cron fire, a manual run
+started by hand, anything — it exits immediately with:
+
+```
+❌ Another build_push_qscimages.sh is already running — exiting (lock: /tmp/build_push_qscimages.lock)
+```
+
+instead of racing the first instance against the same Docker daemon, local
+images, and `component-versions.json`/changelog files. Requires `flock`
+(`util-linux`, preinstalled on Ubuntu).
+
+---
+
 ## Usage
 
 ```bash

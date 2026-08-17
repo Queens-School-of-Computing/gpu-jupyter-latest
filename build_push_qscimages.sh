@@ -2,6 +2,17 @@
 set -euo pipefail
 cd "$(cd -P -- "$(dirname -- "$0")" && pwd -P)"
 
+# Prevent two invocations (cron overlap, manual run, etc.) from building and
+# pushing concurrently against the same repo/Docker daemon. Re-exec ourself
+# once under flock; a second instance exits immediately instead of racing.
+LOCK_FILE="/tmp/build_push_qscimages.lock"
+if [ "${BUILD_PUSH_QSCIMAGES_LOCKED:-}" != "1" ]; then
+    exec env BUILD_PUSH_QSCIMAGES_LOCKED=1 flock -n "$LOCK_FILE" "$0" "$@" || {
+        echo "❌ Another build_push_qscimages.sh is already running — exiting (lock: $LOCK_FILE)"
+        exit 1
+    }
+fi
+
 REPO="queensschoolofcomputingdocker/gpu-jupyter-latest"
 DOCKERHUB_USERNAME="queensschoolofcomputingdocker"
 # DOCKERHUB_PASSWORD must be set in the environment (export DOCKERHUB_PASSWORD=...)

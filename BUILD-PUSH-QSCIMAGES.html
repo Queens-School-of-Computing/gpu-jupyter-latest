@@ -296,6 +296,11 @@ queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-oll
 <pre><code>⚠️  Push attempt 1/3 failed for ...:...-nightly — retrying in 30s...</code></pre>
 <p>If all retries fail, the tag is marked as failed and the email reports failure.</p>
 <hr />
+<h2>Concurrency Lock</h2>
+<p>The script takes an exclusive <code>flock</code> on <code>/tmp/build_push_qscimages.lock</code> before doing any work, and re-execs itself once to acquire it. If a second invocation starts while one is already running — an overlapping cron fire, a manual run started by hand, anything — it exits immediately with:</p>
+<pre><code>❌ Another build_push_qscimages.sh is already running — exiting (lock: /tmp/build_push_qscimages.lock)</code></pre>
+<p>instead of racing the first instance against the same Docker daemon, local images, and <code>component-versions.json</code>/changelog files. Requires <code>flock</code> (<code>util-linux</code>, preinstalled on Ubuntu).</p>
+<hr />
 <h2>Usage</h2>
 <pre><code>./build_push_qscimages.sh [--dry-run] [--noemail] [--no-dockerhub] [--push-only] [--baseline-only] [--nightly-only] [--force] [--full] [--force-baseline]</code></pre>
 <table>
