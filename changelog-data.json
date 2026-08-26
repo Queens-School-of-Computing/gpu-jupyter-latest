@@ -1,6 +1,146 @@
 {
   "entries": [
     {
+      "build_date": "20260826",
+      "timestamp": "2026-08-26T06:02:54+00:00",
+      "builds": [
+        {
+          "image": "20260313",
+          "type": "nightly",
+          "status": "failed",
+          "duration_seconds": 91,
+          "tag": "queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly-20260826",
+          "log": "/tmp/build_push_qscimages_20260826_failed.log"
+        },
+        {
+          "image": "20260424",
+          "type": "nightly",
+          "status": "failed",
+          "duration_seconds": 75,
+          "tag": "queensschoolofcomputingdocker/gpu-jupyter-latest:13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424-nightly-20260826",
+          "log": "/tmp/build_push_qscimages_20260826_failed.log"
+        }
+      ],
+      "warnings": 4,
+      "changes": {
+        "chrome": [
+          "152.0.7977.54",
+          "152.0.7977.64"
+        ],
+        "chromedriver": [
+          "152.0.7977.54",
+          "152.0.7977.64"
+        ],
+        "ollama": [
+          "0.32.15",
+          "0.33.0"
+        ],
+        "opencode": [
+          "1.18.22",
+          "1.18.23"
+        ],
+        "uv": [
+          "0.12.5",
+          "0.12.6"
+        ],
+        "claude_code": [
+          "2.1.245",
+          "2.1.246"
+        ]
+      },
+      "components": {
+        "nightly": {
+          "selenium": "4.47.0",
+          "vscode": "1.134.0",
+          "code_server": "4.134.0",
+          "chrome": "152.0.7977.64",
+          "chromedriver": "152.0.7977.64",
+          "ollama": "0.33.0",
+          "opencode": "1.18.23",
+          "uv": "0.12.6",
+          "claude_code": "2.1.246"
+        },
+        "pinned_common": {
+          "matlab": "R2024b",
+          "jupyterlab_git": "0.51.3",
+          "plotly": "5.24.1",
+          "ipyleaflet": "0.19.2",
+          "ipywidgets": "8.1.5",
+          "jupyterlab_spellchecker": "0.8.4",
+          "turbovnc": "3.3"
+        },
+        "images": {
+          "20260313": {
+            "cuda": "13.0.2",
+            "ubuntu": "24.04",
+            "python": "3.12",
+            "tensorflow": "2.20.0",
+            "keras": "3.13.0",
+            "pytorch": "2.9.1",
+            "torchvision": "0.24.1",
+            "torchaudio": "2.9.1",
+            "torch_cuda_line": "cu126",
+            "tag": "queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313"
+          },
+          "20260424": {
+            "cuda": "13.2.1",
+            "ubuntu": "24.04",
+            "python": "3.12",
+            "tensorflow": "2.20.0",
+            "keras": "3.13.0",
+            "pytorch": "2.11.0",
+            "torchvision": "0.26.0",
+            "torchaudio": "2.11.0",
+            "torch_cuda_line": "cu126",
+            "tag": "queensschoolofcomputingdocker/gpu-jupyter-latest:13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424"
+          }
+        }
+      },
+      "base_images": [
+        "docker.io/nvidia/cuda:13.0.2-cudnn-runtime-ubuntu24.04",
+        "docker.io/nvidia/cuda:13.2.1-cudnn-runtime-ubuntu24.04"
+      ],
+      "layers": {},
+      "known_issues": [
+        {
+          "component": "chrome",
+          "version": "152.0.7977.64",
+          "url": "https://chromereleases.googleblog.com/search/label/Stable%20updates",
+          "notes": "see Chrome stable release blog"
+        },
+        {
+          "component": "chromedriver",
+          "version": "152.0.7977.64",
+          "url": "https://chromereleases.googleblog.com/search/label/Stable%20updates",
+          "notes": "see Chrome stable release blog"
+        },
+        {
+          "component": "claude_code",
+          "version": "2.1.246",
+          "url": "https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md",
+          "notes": "see changelog entry (no known-issues section)"
+        },
+        {
+          "component": "ollama",
+          "version": "0.33.0",
+          "url": "https://github.com/ollama/ollama/releases/tag/v0.33.0",
+          "notes": "none listed in release notes"
+        },
+        {
+          "component": "opencode",
+          "version": "1.18.23",
+          "url": "https://github.com/anomalyco/opencode/releases/tag/v1.18.23",
+          "notes": "none listed in release notes"
+        },
+        {
+          "component": "uv",
+          "version": "0.12.6",
+          "url": "https://github.com/astral-sh/uv/releases/tag/0.12.6",
+          "notes": "none listed in release notes"
+        }
+      ]
+    },
+    {
       "build_date": "20260825",
       "timestamp": "2026-08-25T06:26:19+00:00",
       "builds": [

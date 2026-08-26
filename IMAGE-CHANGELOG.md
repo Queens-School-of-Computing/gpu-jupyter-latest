@@ -9,6 +9,71 @@ Build and deployment history for the Lobot JupyterLab images. See
 
 ---
 
+## 2026-08-26
+
+**Build:** 20260313 nightly ❌ (log: `/tmp/build_push_qscimages_20260826_failed.log`) · 20260424 nightly ❌ (log: `/tmp/build_push_qscimages_20260826_failed.log`) — warnings in build log: 4
+**Changed:** `chrome` 152.0.7977.54 → 152.0.7977.64 · `chromedriver` 152.0.7977.54 → 152.0.7977.64 · `claude_code` 2.1.245 → 2.1.246 · `ollama` 0.32.15 → 0.33.0 · `opencode` 1.18.22 → 1.18.23 · `uv` 0.12.5 → 0.12.6
+**Known issues (for the versions in this build):**
+- `chrome` 152.0.7977.64 — [release notes](https://chromereleases.googleblog.com/search/label/Stable%20updates) — see Chrome stable release blog
+- `chromedriver` 152.0.7977.64 — [release notes](https://chromereleases.googleblog.com/search/label/Stable%20updates) — see Chrome stable release blog
+- `claude_code` 2.1.246 — [release notes](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md) — see changelog entry (no known-issues section)
+- `ollama` 0.33.0 — [release notes](https://github.com/ollama/ollama/releases/tag/v0.33.0) — none listed in release notes
+- `opencode` 1.18.23 — [release notes](https://github.com/anomalyco/opencode/releases/tag/v1.18.23) — none listed in release notes
+- `uv` 0.12.6 — [release notes](https://github.com/astral-sh/uv/releases/tag/0.12.6) — none listed in release notes
+
+<details>
+<summary>Full component list (2026-08-26)</summary>
+
+| Component | Version | Scope |
+|-----------|---------|-------|
+| `chrome` | 152.0.7977.64 | nightly tools |
+| `chromedriver` | 152.0.7977.64 | nightly tools |
+| `claude_code` | 2.1.246 | nightly tools |
+| `code_server` | 4.134.0 | nightly tools |
+| `ollama` | 0.33.0 | nightly tools |
+| `opencode` | 1.18.23 | nightly tools |
+| `selenium` | 4.47.0 | nightly tools |
+| `uv` | 0.12.6 | nightly tools |
+| `vscode` | 1.134.0 | nightly tools |
+| `ipyleaflet` | 0.19.2 | pinned, all images |
+| `ipywidgets` | 8.1.5 | pinned, all images |
+| `jupyterlab_git` | 0.51.3 | pinned, all images |
+| `jupyterlab_spellchecker` | 0.8.4 | pinned, all images |
+| `matlab` | R2024b | pinned, all images |
+| `plotly` | 5.24.1 | pinned, all images |
+| `turbovnc` | 3.3 | pinned, all images |
+| `cuda` | 13.0.2 | pinned, 20260313 |
+| `keras` | 3.13.0 | pinned, 20260313 |
+| `python` | 3.12 | pinned, 20260313 |
+| `pytorch` | 2.9.1 | pinned, 20260313 |
+| `tensorflow` | 2.20.0 | pinned, 20260313 |
+| `torch_cuda_line` | cu126 | pinned, 20260313 |
+| `torchaudio` | 2.9.1 | pinned, 20260313 |
+| `torchvision` | 0.24.1 | pinned, 20260313 |
+| `ubuntu` | 24.04 | pinned, 20260313 |
+| `cuda` | 13.2.1 | pinned, 20260424 |
+| `keras` | 3.13.0 | pinned, 20260424 |
+| `python` | 3.12 | pinned, 20260424 |
+| `pytorch` | 2.11.0 | pinned, 20260424 |
+| `tensorflow` | 2.20.0 | pinned, 20260424 |
+| `torch_cuda_line` | cu126 | pinned, 20260424 |
+| `torchaudio` | 2.11.0 | pinned, 20260424 |
+| `torchvision` | 0.26.0 | pinned, 20260424 |
+| `ubuntu` | 24.04 | pinned, 20260424 |
+
+</details>
+
+<details>
+<summary>Layers &amp; base images</summary>
+
+Base images downloaded:
+- `docker.io/nvidia/cuda:13.0.2-cudnn-runtime-ubuntu24.04`
+- `docker.io/nvidia/cuda:13.2.1-cudnn-runtime-ubuntu24.04`
+
+</details>
+
+---
+
 ## 2026-08-25
 
 **Build:** 20260313 nightly ✅ 9m 25s · 20260424 nightly ✅ 7m 56s — warnings in build log: 18
