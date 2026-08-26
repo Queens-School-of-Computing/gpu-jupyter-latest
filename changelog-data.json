@@ -2,26 +2,24 @@
   "entries": [
     {
       "build_date": "20260826",
-      "timestamp": "2026-08-26T06:02:54+00:00",
+      "timestamp": "2026-08-26T13:44:23+00:00",
       "builds": [
         {
           "image": "20260313",
           "type": "nightly",
-          "status": "failed",
-          "duration_seconds": 91,
-          "tag": "queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly-20260826",
-          "log": "/tmp/build_push_qscimages_20260826_failed.log"
+          "status": "success",
+          "duration_seconds": 367,
+          "tag": "queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly-20260826"
         },
         {
           "image": "20260424",
           "type": "nightly",
-          "status": "failed",
-          "duration_seconds": 75,
-          "tag": "queensschoolofcomputingdocker/gpu-jupyter-latest:13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424-nightly-20260826",
-          "log": "/tmp/build_push_qscimages_20260826_failed.log"
+          "status": "success",
+          "duration_seconds": 365,
+          "tag": "queensschoolofcomputingdocker/gpu-jupyter-latest:13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424-nightly-20260826"
         }
       ],
-      "warnings": 4,
+      "warnings": 10,
       "changes": {
         "chrome": [
           "152.0.7977.54",

@@ -11,7 +11,7 @@ Build and deployment history for the Lobot JupyterLab images. See
 
 ## 2026-08-26
 
-**Build:** 20260313 nightly ❌ (log: `/tmp/build_push_qscimages_20260826_failed.log`) · 20260424 nightly ❌ (log: `/tmp/build_push_qscimages_20260826_failed.log`) — warnings in build log: 4
+**Build:** 20260313 nightly ✅ 6m 7s · 20260424 nightly ✅ 6m 5s — warnings in build log: 10
 **Changed:** `chrome` 152.0.7977.54 → 152.0.7977.64 · `chromedriver` 152.0.7977.54 → 152.0.7977.64 · `claude_code` 2.1.245 → 2.1.246 · `ollama` 0.32.15 → 0.33.0 · `opencode` 1.18.22 → 1.18.23 · `uv` 0.12.5 → 0.12.6
 **Known issues (for the versions in this build):**
 - `chrome` 152.0.7977.64 — [release notes](https://chromereleases.googleblog.com/search/label/Stable%20updates) — see Chrome stable release blog
