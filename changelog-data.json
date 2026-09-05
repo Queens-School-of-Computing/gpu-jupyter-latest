@@ -1,6 +1,114 @@
 {
   "entries": [
     {
+      "build_date": "20260905",
+      "timestamp": "2026-09-05T06:13:35+00:00",
+      "builds": [
+        {
+          "image": "20260313",
+          "type": "nightly",
+          "status": "success",
+          "duration_seconds": 228,
+          "tag": "queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313-nightly-20260905"
+        },
+        {
+          "image": "20260424",
+          "type": "nightly",
+          "status": "success",
+          "duration_seconds": 326,
+          "tag": "queensschoolofcomputingdocker/gpu-jupyter-latest:13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424-nightly-20260905"
+        }
+      ],
+      "warnings": 10,
+      "changes": {
+        "opencode": [
+          "1.18.27",
+          "1.18.29"
+        ],
+        "uv": [
+          "0.12.9",
+          "0.12.10"
+        ],
+        "claude_code": [
+          "2.1.260",
+          "2.1.261"
+        ]
+      },
+      "components": {
+        "nightly": {
+          "selenium": "4.48.0",
+          "vscode": "1.136.1",
+          "code_server": "4.135.0",
+          "chrome": "152.0.7977.82",
+          "chromedriver": "152.0.7977.82",
+          "ollama": "0.33.3",
+          "opencode": "1.18.29",
+          "uv": "0.12.10",
+          "claude_code": "2.1.261"
+        },
+        "pinned_common": {
+          "matlab": "R2024b",
+          "jupyterlab_git": "0.51.3",
+          "plotly": "5.24.1",
+          "ipyleaflet": "0.19.2",
+          "ipywidgets": "8.1.5",
+          "jupyterlab_spellchecker": "0.8.4",
+          "turbovnc": "3.3"
+        },
+        "images": {
+          "20260313": {
+            "cuda": "13.0.2",
+            "ubuntu": "24.04",
+            "python": "3.12",
+            "tensorflow": "2.20.0",
+            "keras": "3.13.0",
+            "pytorch": "2.9.1",
+            "torchvision": "0.24.1",
+            "torchaudio": "2.9.1",
+            "torch_cuda_line": "cu126",
+            "tag": "queensschoolofcomputingdocker/gpu-jupyter-latest:13.0.2cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260313"
+          },
+          "20260424": {
+            "cuda": "13.2.1",
+            "ubuntu": "24.04",
+            "python": "3.12",
+            "tensorflow": "2.20.0",
+            "keras": "3.13.0",
+            "pytorch": "2.11.0",
+            "torchvision": "0.26.0",
+            "torchaudio": "2.11.0",
+            "torch_cuda_line": "cu126",
+            "tag": "queensschoolofcomputingdocker/gpu-jupyter-latest:13.2.1cudnn-2.20.0tf-matlab-ollama-claude-qsc-u24.04-20260424"
+          }
+        }
+      },
+      "base_images": [
+        "docker.io/nvidia/cuda:13.0.2-cudnn-runtime-ubuntu24.04",
+        "docker.io/nvidia/cuda:13.2.1-cudnn-runtime-ubuntu24.04"
+      ],
+      "layers": {},
+      "known_issues": [
+        {
+          "component": "claude_code",
+          "version": "2.1.261",
+          "url": "https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md",
+          "notes": "see changelog entry (no known-issues section)"
+        },
+        {
+          "component": "opencode",
+          "version": "1.18.29",
+          "url": "https://github.com/anomalyco/opencode/releases/tag/v1.18.29",
+          "notes": "none listed in release notes"
+        },
+        {
+          "component": "uv",
+          "version": "0.12.10",
+          "url": "https://github.com/astral-sh/uv/releases/tag/0.12.10",
+          "notes": "none listed in release notes"
+        }
+      ]
+    },
+    {
       "build_date": "20260904",
       "timestamp": "2026-09-04T06:32:34+00:00",
       "builds": [
