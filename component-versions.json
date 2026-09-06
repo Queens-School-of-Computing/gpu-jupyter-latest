@@ -1,5 +1,5 @@
 {
-  "build_date": "20260905",
+  "build_date": "20260906",
   "components": {
     "selenium": "4.48.0",
     "vscode": "1.136.1",
@@ -9,7 +9,7 @@
     "ollama": "0.33.3",
     "opencode": "1.18.29",
     "uv": "0.12.10",
-    "claude_code": "2.1.261"
+    "claude_code": "2.1.263"
   },
   "pinned_common": {
     "matlab": "R2024b",
