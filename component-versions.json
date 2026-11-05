@@ -1,9 +1,9 @@
 {
-  "build_date": "20261104",
+  "build_date": "20261105",
   "components": {
     "selenium": "4.52.0",
-    "vscode": "1.144.1",
-    "code_server": "4.144.0",
+    "vscode": "1.145.0",
+    "code_server": "4.145.0",
     "chrome": "157.0.8103.38",
     "chromedriver": "157.0.8103.38",
     "ollama": "0.40.14",
